@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>問題規格書</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #E8E6E1;
+    font-family: 'Noto Sans TC', sans-serif;
+    color: #1A1A1A;
+    line-height: 1.7;
+    display: flex;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+
+  #capture {
+    width: 794px;
+    min-height: 1123px;
+    background: #F7F6F3;
+    padding: 48px 52px 60px;
+    position: relative;
+  }
+
+  /* ── Download Button ── */
+  .download-btn {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #6B5CE7;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 22px;
+    font-family: 'Noto Sans TC', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 4px 16px rgba(107,92,231,.35);
+    transition: transform .15s, box-shadow .15s;
+    z-index: 9999;
+  }
+  .download-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(107,92,231,.45);
+  }
+  .download-btn .material-icons-outlined { font-size: 18px; }
+
+  /* ── Header ── */
+  .header { margin-bottom: 36px; }
+
+  .header-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #EEEBFF;
+    color: #6B5CE7;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 5px 14px;
+    border-radius: 20px;
+    margin-bottom: 12px;
+  }
+  .header-badge .material-icons-outlined { font-size: 16px; }
+
+  .header-title {
+    font-size: 32px;
+    font-weight: 900;
+    color: #1A1A1A;
+    letter-spacing: -.5px;
+    margin-bottom: 16px;
+  }
+
+  .header-meta {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .meta-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #888;
+  }
+  .meta-item .material-icons-outlined { font-size: 16px; color: #AAA; }
+  .meta-value {
+    font-weight: 700;
+    color: #444;
+  }
+
+  .header-divider {
+    margin-top: 20px;
+    border: none;
+    border-top: 2px solid #E0DCD6;
+  }
+
+  /* ── Sections ── */
+  .section { margin-bottom: 32px; }
+
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+
+  .section-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .section-icon .material-icons-outlined { font-size: 22px; }
+
+  .section-label { display: flex; flex-direction: column; }
+  .section-num { font-size: 12px; color: #AAA; font-weight: 500; line-height: 1.2; }
+  .section-title { font-size: 20px; font-weight: 900; color: #1A1A1A; line-height: 1.3; }
+
+  .content-box {
+    background: #fff;
+    border: 1px solid #E0DCD6;
+    border-radius: 12px;
+    padding: 20px;
+  }
+
+  /* ── Item rows ── */
+  .item-row {
+    display: flex;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid #F0EEE9;
+    align-items: flex-start;
+  }
+  .item-row:last-child { border-bottom: none; }
+  .item-row:first-child { padding-top: 0; }
+
+  .item-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #888;
+    min-width: 56px;
+    flex-shrink: 0;
+    padding-top: 2px;
+  }
+  .item-text {
+    font-size: 15px;
+    color: #333;
+    line-height: 1.7;
+    flex: 1;
+  }
+
+  .item-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #F0EEE9;
+    font-size: 12px;
+    font-weight: 700;
+    color: #888;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .item-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  /* ── Priority badges ── */
+  .priority-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .priority-p1 { background: #FFE0EC; color: #D63384; }
+  .priority-p2 { background: #FFF3D6; color: #D4900A; }
+
+  /* ── Constraint / Obstacle IDs ── */
+  .item-id {
+    font-size: 12px;
+    font-weight: 700;
+    color: #AAA;
+    background: #F5F5F5;
+    padding: 2px 8px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .sub-field {
+    font-size: 13px;
+    color: #666;
+    margin-top: 6px;
+    padding-left: 4px;
+    line-height: 1.6;
+  }
+  .sub-field strong {
+    color: #888;
+    font-weight: 700;
+  }
+
+  /* ── Comparison Table (Section 06) ── */
+  .compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  .compare-table th {
+    text-align: left;
+    font-size: 12px;
+    font-weight: 700;
+    color: #AAA;
+    padding: 10px 12px;
+    border-bottom: 2px solid #E0DCD6;
+    white-space: nowrap;
+  }
+  .compare-table td {
+    padding: 12px;
+    border-bottom: 1px solid #F0EEE9;
+    color: #333;
+    vertical-align: top;
+  }
+  .compare-table tr:last-child td { border-bottom: none; }
+
+  .compare-table .recommend {
+    background: #EEEBFF;
+    border-radius: 0;
+  }
+  .compare-table .recommend td {
+    color: #6B5CE7;
+    font-weight: 700;
+    border-bottom-color: #DDD8FF;
+  }
+  .compare-table .recommend td:first-child::before {
+    content: '\2605';
+    margin-right: 4px;
+  }
+
+  /* ── Timeline (Section 07) ── */
+  .timeline {
+    position: relative;
+    padding-left: 36px;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 13px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: #E0DCD6;
+  }
+
+  .timeline-item {
+    position: relative;
+    padding: 0 0 24px 0;
+  }
+  .timeline-item:last-child { padding-bottom: 0; }
+
+  .timeline-dot {
+    position: absolute;
+    left: -36px;
+    top: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #6B5CE7;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+  }
+
+  .timeline-content {
+    background: #FAFAF8;
+    border: 1px solid #F0EEE9;
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+  .timeline-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1A1A1A;
+    margin-bottom: 2px;
+  }
+  .timeline-desc {
+    font-size: 13px;
+    color: #888;
+    line-height: 1.6;
+  }
+
+  /* ── Exclusion items (Section 08) ── */
+  .exclusion-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 0;
+    border-bottom: 1px solid #F0EEE9;
+    font-size: 15px;
+    color: #333;
+  }
+  .exclusion-item:last-child { border-bottom: none; }
+  .exclusion-item:first-child { padding-top: 0; }
+  .exclusion-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+    margin-top: 3px;
+    color: #D63384;
+  }
+
+  /* ── Risk / Assumption blocks (Section 09) ── */
+  .sub-block { margin-bottom: 16px; }
+  .sub-block:last-child { margin-bottom: 0; }
+
+  .sub-block-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #888;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .risk-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid #F0EEE9;
+    font-size: 15px;
+    color: #333;
+  }
+  .risk-item:last-child { border-bottom: none; }
+  .risk-item:first-child { padding-top: 0; }
+  .risk-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  /* ── Print ── */
+  @media print {
+    .download-btn { display: none !important; }
+    body { background: #fff; padding: 0; }
+    #capture { box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+
+<button class="download-btn" onclick="downloadPNG()">
+  <span class="material-icons-outlined">download</span>
+  下載 PNG
+</button>
+
+<div id="capture">
+
+  <!-- ════════════ HEADER ════════════ -->
+  <div class="header">
+    <div class="header-badge">
+      <span class="material-icons-outlined">psychology</span>
+      問題結構化分析
+    </div>
+    <h1 class="header-title">測試工作流問題規格書</h1>
+    <div class="header-meta">
+      <div class="meta-item">
+        <span class="material-icons-outlined">schedule</span>
+        產生時間
+        <span class="meta-value">2026-04-15 11:06</span>
+      </div>
+      <div class="meta-item">
+        <span class="material-icons-outlined">layers</span>
+        問題層級
+        <span class="meta-value">流程管理層級</span>
+      </div>
+      <div class="meta-item">
+        <span class="material-icons-outlined">speed</span>
+        複雜度
+        <span class="meta-value">中偏高（跨前後端）</span>
+      </div>
+    </div>
+    <hr class="header-divider">
+  </div>
+
+  <!-- ════════════ 01 問題定義 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#FFE0EC;">
+        <span class="material-icons-outlined" style="color:#D63384;">report_problem</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 01</span>
+        <span class="section-title">問題定義</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="item-row">
+        <span class="item-label">現況</span>
+        <span class="item-text">每次改版都要針對目前系統新增及已有的功能進行測試以確認所有功能正常，但目前缺乏系統化測試方法。</span>
+      </div>
+      <div class="item-row">
+        <span class="item-label">痛點</span>
+        <div class="item-text">
+          <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;">
+            <span class="item-num">1</span>
+            <span>手動測試耗時長，且容易因為功能越來越多而遺漏部分邊界情境。</span>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;">
+            <span class="item-num">2</span>
+            <span>因為過度依賴開發者的記憶來測試，導致系統上線容易發生迴歸錯誤 (Regression)。</span>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:8px;">
+            <span class="item-num">3</span>
+            <span>點餐流程涉及前端介面狀態、Google Apps Script 後端邏輯與 Google Sheets 資料庫，排錯與驗證繁瑣。</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 02 目標 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#FFF3D6;">
+        <span class="material-icons-outlined" style="color:#D4900A;">flag</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 02</span>
+        <span class="section-title">目標</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="item-row">
+        <span class="priority-badge priority-p1">P1</span>
+        <span class="item-text" style="display:flex;align-items:flex-start;gap:6px;">
+          <span style="color:#0A8A4A;font-size:15px;flex-shrink:0;">&#x2705;</span>
+          <span>建立一套核心流程的自動化或標準化測試表，確保改版不會破壞 P0 核心功能（點餐、加點、結帳金額計算）。</span>
+        </span>
+      </div>
+      <div class="item-row">
+        <span class="priority-badge priority-p1">P1</span>
+        <span class="item-text" style="display:flex;align-items:flex-start;gap:6px;">
+          <span style="color:#0A8A4A;font-size:15px;flex-shrink:0;">&#x2705;</span>
+          <span>在一個小時內能完成每次改版的全功能迴歸驗證。</span>
+        </span>
+      </div>
+      <div class="item-row">
+        <span class="priority-badge priority-p2">P2</span>
+        <span class="item-text" style="display:flex;align-items:flex-start;gap:6px;">
+          <span style="color:#0A8A4A;font-size:15px;flex-shrink:0;">&#x2705;</span>
+          <span>能夠無縫整合至現行的開發與部署流程中。</span>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 03 限制條件 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#FFE0EC;">
+        <span class="material-icons-outlined" style="color:#D63384;">block</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 03</span>
+        <span class="section-title">限制條件</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="item-row">
+        <span class="item-id">CN-01</span>
+        <span class="item-icon" style="color:#D63384;">&#x1F6AB;</span>
+        <span class="item-text">系統基於 React + Vite 並打包注入於 GAS HtmlService 執行，一般自動化框架可能難以直接模擬 GAS 執行環境。</span>
+      </div>
+      <div class="item-row">
+        <span class="item-id">CN-02</span>
+        <span class="item-icon" style="color:#D63384;">&#x1F6AB;</span>
+        <span class="item-text">缺乏專職 QA 團隊，測試流程的維護成本必須極低，不能反過來拖垮開發進度。</span>
+      </div>
+      <div class="item-row">
+        <span class="item-id">CN-03</span>
+        <span class="item-icon" style="color:#D63384;">&#x1F6AB;</span>
+        <span class="item-text">資料庫為 Google Sheets，測試時需解決髒資料清理或環境隔離的問題。</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 04 障礙 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#D6F0FF;">
+        <span class="material-icons-outlined" style="color:#0D7FBF;">construction</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 04</span>
+        <span class="section-title">障礙</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="item-row" style="flex-direction:column;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="item-id">OB-01</span>
+          <span class="item-icon" style="color:#0D7FBF;">&rarr;</span>
+          <span class="item-text" style="font-weight:700;">測試環境與正式環境混用</span>
+        </div>
+        <div class="sub-field">
+          <strong>根因：</strong>當前架構並未配置專屬的測試版 Google Sheets 作為 Staging 環境，導致無法隨意注入假資料做自動化測試。<br>
+          <strong>影響：</strong>測試動作可能污染正式訂單資料，或因害怕弄亂資料而不敢進行極端測試。
+        </div>
+      </div>
+      <div class="item-row" style="flex-direction:column;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="item-id">OB-02</span>
+          <span class="item-icon" style="color:#0D7FBF;">&rarr;</span>
+          <span class="item-text" style="font-weight:700;">GAS 環境難以 E2E 測試</span>
+        </div>
+        <div class="sub-field">
+          <strong>根因：</strong>GAS html 頁面有 Google 的 iframe 限制與登入牆，Playwright/Cypress 難以自動化跨越帳號驗證。<br>
+          <strong>影響：</strong>只能依賴人工點擊或前端 Mock 測試，無法進行真實的 End-to-End 自動化。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 05 成功標準 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#D6FFE8;">
+        <span class="material-icons-outlined" style="color:#0A8A4A;">verified</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 05</span>
+        <span class="section-title">成功標準</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="item-row">
+        <span class="item-num">1</span>
+        <span class="item-text">完成一份涵蓋 100% P0（點餐/結單/查看狀態）情境的手動檢核清單（Checklist）。</span>
+      </div>
+      <div class="item-row">
+        <span class="item-num">2</span>
+        <span class="item-text">至少建立 3 個前端核心商業邏輯（例如：費用計算、加點邏輯）的單元測試並放入 CI/CD 流程。</span>
+      </div>
+      <div class="item-row">
+        <span class="item-num">3</span>
+        <span class="item-text">建立分離的 Staging 部署機制與測試專用 Spreadsheet。</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 06 建議方案 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#EEEBFF;">
+        <span class="material-icons-outlined" style="color:#6B5CE7;">lightbulb</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 06</span>
+        <span class="section-title">建議方案</span>
+      </div>
+    </div>
+    <div class="content-box" style="padding:0;overflow:hidden;">
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th style="width:24%;">方案</th>
+            <th style="width:36%;">解決</th>
+            <th style="width:20%;">難度</th>
+            <th style="width:20%;">費用</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="recommend">
+            <td>分離環境 + 核心單元測試 + 完整手動 CheckList</td>
+            <td>建立前後端分離的測試環境（Mock API），前端實裝 Vitest 單元測試，E2E 依賴手動檢核表。</td>
+            <td>中 (需切分環境)</td>
+            <td>低 (不需建置大型腳本)</td>
+          </tr>
+          <tr>
+            <td>導入完整 E2E 測試 (Playwright)</td>
+            <td>寫 Playwright 腳本打本地 mock 或測試環境。</td>
+            <td>高 (GAS 登入牆阻擋)</td>
+            <td>高 (腳本維護費時)</td>
+          </tr>
+          <tr>
+            <td>純手動測試機制 (不寫程式)</td>
+            <td>定義 QA 流程，改版前由不同人交叉測試。</td>
+            <td>低</td>
+            <td>極低 (但耗費人力)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ════════════ 07 實施計劃 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#D6FFE8;">
+        <span class="material-icons-outlined" style="color:#0A8A4A;">rocket_launch</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 07</span>
+        <span class="section-title">實施計劃</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="timeline-dot">1</div>
+          <div class="timeline-content">
+            <div class="timeline-title">Phase 1: 環境隔離與文件化</div>
+            <div class="timeline-desc">複製現有 Spreadsheet 建立測試用資料庫，並列出 P0 核心手動測試檢核表（CheckList）。</div>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-dot">2</div>
+          <div class="timeline-content">
+            <div class="timeline-title">Phase 2: 隔離出 Mock API 環境</div>
+            <div class="timeline-desc">在 React 專案中實作 Mock Service Worker 或假資料層，讓前端能在不連 GAS 的情況下運行 90% 畫面。</div>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-dot">3</div>
+          <div class="timeline-content">
+            <div class="timeline-title">Phase 3: 導入重點單元測試</div>
+            <div class="timeline-desc">針對容易出錯的加點邏輯、金額計算加入 Vitest 單元測試，確保邊界條件不被破壞。</div>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-dot">4</div>
+          <div class="timeline-content">
+            <div class="timeline-title">Phase 4: 自動化部署整合</div>
+            <div class="timeline-desc">將單元測試加入部署腳本，每次執行 npm run deploy 時會先跑測試，失敗則阻斷更新。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 08 排除範圍 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#F5F5F5;">
+        <span class="material-icons-outlined" style="color:#666;">do_not_disturb</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 08</span>
+        <span class="section-title">排除範圍</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="exclusion-item">
+        <span class="exclusion-icon">&#x26D4;</span>
+        <span>不追求 100% E2E UI 自動化測試（投入產出比太低）。</span>
+      </div>
+      <div class="exclusion-item">
+        <span class="exclusion-icon">&#x26D4;</span>
+        <span>不修改現有 GAS 作為後端與資料庫的基礎架構設定。</span>
+      </div>
+      <div class="exclusion-item">
+        <span class="exclusion-icon">&#x26D4;</span>
+        <span>不引入重型 QA 測試平台管理工具（如 TestRail），以 Markdown 檢核表輕量管理即可。</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 09 風險與假設 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#FFF3D6;">
+        <span class="material-icons-outlined" style="color:#D4900A;">warning</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 09</span>
+        <span class="section-title">風險與假設</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="sub-block">
+        <div class="sub-block-title">
+          <span style="font-size:15px;">&#x26A0;&#xFE0F;</span>
+          假設
+        </div>
+        <div class="risk-item">
+          <span class="risk-icon" style="color:#D4900A;">&#x26A0;&#xFE0F;</span>
+          <span>手動測試檢核表如果夠明確，可以在 15 分鐘內執行完畢，不會過度消耗時間。</span>
+        </div>
+        <div class="risk-item">
+          <span class="risk-icon" style="color:#D4900A;">&#x26A0;&#xFE0F;</span>
+          <span>大部分的系統 Bug 是因為前端邏輯錯誤或元件狀態綁定錯誤，而非 GAS 後端系統性崩潰。</span>
+        </div>
+      </div>
+      <div class="sub-block" style="border-top:1px solid #F0EEE9;padding-top:16px;">
+        <div class="sub-block-title">
+          <span style="font-size:15px;">&#x26A0;&#xFE0F;</span>
+          風險
+        </div>
+        <div class="risk-item">
+          <span class="risk-icon" style="color:#D63384;">&#x26A0;&#xFE0F;</span>
+          <span>GAS 的黑箱限制：有時 Google Apps Script 掛掉是 Google 本身配額或 API 異常，自動化測試與 mock 抓不到這種錯誤。</span>
+        </div>
+        <div class="risk-item">
+          <span class="risk-icon" style="color:#D63384;">&#x26A0;&#xFE0F;</span>
+          <span>隨著專案變大，手動 CheckList 會越來越長，最終仍然會回到「因為不想花時間測而跳過」的惡性循環。需要嚴格約束或定期轉化為單元測試。</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /#capture -->
+
+<script>
+function downloadPNG() {
+  const btn = document.querySelector('.download-btn');
+  btn.style.display = 'none';
+  html2canvas(document.getElementById('capture'), {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: '#F7F6F3'
+  }).then(function(canvas) {
+    const link = document.createElement('a');
+    link.download = '測試工作流問題規格書.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    btn.style.display = 'block';
+  }).catch(function() {
+    btn.style.display = 'block';
+  });
+}
+</script>
+
+</body>
+</html>

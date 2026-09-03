@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Lifestyle Premium Dining</title>
+    <script>
+      window.onerror = function(msg, url, line, col, err) {
+        var el = document.getElementById('error-log');
+        if(el) {
+          el.innerHTML += '<p style="color:red">Error: ' + msg + ' at line ' + line + '</p>';
+          el.style.display = 'block';
+        }
+      };
+    </script>
+  </head>
+  <body>
+    <div id="error-log" style="display:none; padding:20px; font-family:sans-serif; background:#fee; border-bottom:1px solid #f99;"></div>
+    <div id="root">
+      <div style="padding:40px; text-align:center; font-family:sans-serif;">Booting App...</div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+    <!-- GAS mock wrapper for local dev -->
+    <script>
+      if(typeof google === 'undefined') {
+        window.google = {
+          script: {
+            run: {
+              withSuccessHandler: function(cb) {
+                return {
+                  withFailureHandler: function() { return this; },
+                  getInitialData: function() { setTimeout(() => cb({
+                    date: '2026-04-09',
+                    telephones: [{id:'R1', name:'Test Rest', telephone:'02-1234567'}],
+                    employees: ['Amy', 'Bob', 'Charlie'],
+                    summary: [],
+                    menuPayload: {
+                      restaurants: [{id:'R1', name:'Test Rest', category:'正餐'}],
+                      items: [{id:'M1', restaurantId:'R1', name:'排骨飯', price:100, category:'正餐', flavors:'辣,不辣', portions:[]}],
+                      extras: [{id:'E1', restaurantId:'R1', name:'加飯', price:15, type:'extra', group:'加點'}]
+                    }
+                  }), 500); },
+                  getEmployeeBalance: function(name) { setTimeout(() => cb(Math.floor(Math.random()*2000)-500), 500); },
+                  submitOrder: function(pl) { setTimeout(() => cb(), 800); }
+                };
+              }
+            }
+          }
+        };
+      }
+    </script>
+  </body>
+</html>

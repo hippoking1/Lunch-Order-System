@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>問題規格書</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #E8E6E1;
+    font-family: 'Noto Sans TC', sans-serif;
+    color: #1A1A1A;
+    line-height: 1.7;
+    display: flex;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+
+  #capture {
+    width: 794px;
+    min-height: 1123px;
+    background: #F7F6F3;
+    padding: 48px 52px 60px;
+    position: relative;
+  }
+
+  /* ── Download Button ── */
+  .download-btn {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #6B5CE7;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 22px;
+    font-family: 'Noto Sans TC', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 4px 16px rgba(107,92,231,.35);
+    transition: transform .15s, box-shadow .15s;
+    z-index: 9999;
+  }
+  .download-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(107,92,231,.45);
+  }
+  .download-btn .material-icons-outlined { font-size: 18px; }
+
+  /* ── Header ── */
+  .header { margin-bottom: 36px; }
+
+  .header-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #EEEBFF;
+    color: #6B5CE7;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 5px 14px;
+    border-radius: 20px;
+    margin-bottom: 12px;
+  }
+  .header-badge .material-icons-outlined { font-size: 16px; }
+
+  .header-title {
+    font-size: 32px;
+    font-weight: 900;
+    color: #1A1A1A;
+    letter-spacing: -.5px;
+    margin-bottom: 16px;
+  }
+
+  .header-meta {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .meta-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #888;
+  }
+  .meta-item .material-icons-outlined { font-size: 16px; color: #AAA; }
+  .meta-value {
+    font-weight: 700;
+    color: #444;
+  }
+
+  .header-divider {
+    margin-top: 20px;
+    border: none;
+    border-top: 2px solid #E0DCD6;
+  }
+
+  /* ── Sections ── */
+  .section { margin-bottom: 32px; }
+
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+
+  .section-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .section-icon .material-icons-outlined { font-size: 22px; }
+
+  .section-label { display: flex; flex-direction: column; }
+  .section-num { font-size: 12px; color: #AAA; font-weight: 500; line-height: 1.2; }
+  .section-title { font-size: 20px; font-weight: 900; color: #1A1A1A; line-height: 1.3; }
+
+  .content-box {
+    background: #fff;
+    border: 1px solid #E0DCD6;
+    border-radius: 12px;
+    padding: 20px;
+  }
+
+  /* ── Item rows ── */
+  .item-row {
+    display: flex;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid #F0EEE9;
+    align-items: flex-start;
+  }
+  .item-row:last-child { border-bottom: none; }
+  .item-row:first-child { padding-top: 0; }
+
+  .item-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #888;
+    min-width: 56px;
+    flex-shrink: 0;
+    padding-top: 2px;
+  }
+  .item-text {
+    font-size: 15px;
+    color: #333;
+    line-height: 1.7;
+    flex: 1;
+  }
+
+  .item-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #F0EEE9;
+    font-size: 12px;
+    font-weight: 700;
+    color: #888;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .item-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  /* ── Priority badges ── */
+  .priority-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .priority-p1 { background: #FFE0EC; color: #D63384; }
+  .priority-p2 { background: #FFF3D6; color: #D4900A; }
+
+  /* ── Constraint / Obstacle IDs ── */
+  .item-id {
+    font-size: 12px;
+    font-weight: 700;
+    color: #AAA;
+    background: #F5F5F5;
+    padding: 2px 8px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .sub-field {
+    font-size: 13px;
+    color: #666;
+    margin-top: 6px;
+    padding-left: 4px;
+    line-height: 1.6;
+  }
+  .sub-field strong {
+    color: #888;
+    font-weight: 700;
+  }
+
+  /* ── Comparison Table (Section 06) ── */
+  .compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  .compare-table th {
+    text-align: left;
+    font-size: 12px;
+    font-weight: 700;
+    color: #AAA;
+    padding: 10px 12px;
+    border-bottom: 2px solid #E0DCD6;
+    white-space: nowrap;
+  }
+  .compare-table td {
+    padding: 12px;
+    border-bottom: 1px solid #F0EEE9;
+    color: #333;
+    vertical-align: top;
+  }
+  .compare-table tr:last-child td { border-bottom: none; }
+
+  .compare-table .recommend {
+    background: #EEEBFF;
+    border-radius: 0;
+  }
+  .compare-table .recommend td {
+    color: #6B5CE7;
+    font-weight: 700;
+    border-bottom-color: #DDD8FF;
+  }
+  .compare-table .recommend td:first-child::before {
+    content: '\2605';
+    margin-right: 4px;
+  }
+
+  /* ── Timeline (Section 07) ── */
+  .timeline {
+    position: relative;
+    padding-left: 36px;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 13px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: #E0DCD6;
+  }
+
+  .timeline-item {
+    position: relative;
+    padding: 0 0 24px 0;
+  }
+  .timeline-item:last-child { padding-bottom: 0; }
+
+  .timeline-dot {
+    position: absolute;
+    left: -36px;
+    top: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #6B5CE7;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+  }
+
+  .timeline-content {
+    background: #FAFAF8;
+    border: 1px solid #F0EEE9;
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+  .timeline-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1A1A1A;
+    margin-bottom: 2px;
+  }
+  .timeline-desc {
+    font-size: 13px;
+    color: #888;
+    line-height: 1.6;
+  }
+
+  /* ── Exclusion items (Section 08) ── */
+  .exclusion-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 0;
+    border-bottom: 1px solid #F0EEE9;
+    font-size: 15px;
+    color: #333;
+  }
+  .exclusion-item:last-child { border-bottom: none; }
+  .exclusion-item:first-child { padding-top: 0; }
+  .exclusion-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+    margin-top: 3px;
+    color: #D63384;
+  }
+
+  /* ── Risk / Assumption blocks (Section 09) ── */
+  .sub-block { margin-bottom: 16px; }
+  .sub-block:last-child { margin-bottom: 0; }
+
+  .sub-block-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #888;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .risk-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid #F0EEE9;
+    font-size: 15px;
+    color: #333;
+  }
+  .risk-item:last-child { border-bottom: none; }
+  .risk-item:first-child { padding-top: 0; }
+  .risk-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  /* ── Print ── */
+  @media print {
+    .download-btn { display: none !important; }
+    body { background: #fff; padding: 0; }
+    #capture { box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+
+<button class="download-btn" onclick="downloadPNG()">
+  <span class="material-icons-outlined">download</span>
+  下載 PNG
+</button>
+
+<div id="capture">
+
+  <!-- ════════════ HEADER ════════════ -->
+  <div class="header">
+    <div class="header-badge">
+      <span class="material-icons-outlined">psychology</span>
+      問題結構化分析
+    </div>
+    <h1 class="header-title">問題規格書</h1>
+    <div class="header-meta">
+      <div class="meta-item">
+        <span class="material-icons-outlined">schedule</span>
+        產生時間
+        <span class="meta-value">2026-04-09 15:35</span>
+      </div>
+      <div class="meta-item">
+        <span class="material-icons-outlined">layers</span>
+        問題層級
+        <span class="meta-value">系統架構與效能瓶頸</span>
+      </div>
+      <div class="meta-item">
+        <span class="material-icons-outlined">speed</span>
+        複雜度
+        <span class="meta-value">中級</span>
+      </div>
+    </div>
+    <hr class="header-divider">
+  </div>
+
+  <!-- ════════════ 01 問題定義 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#FFE0EC;">
+        <span class="material-icons-outlined" style="color:#D63384;">report_problem</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 01</span>
+        <span class="section-title">問題定義</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="item-row">
+        <span class="item-label">現況</span>
+        <span class="item-text">目前訂餐系統使用純原生 HTML/JS 開發，單一檔案超過 500 行。依賴多次非同步 google.script.run 呼叫來取得連動選單資料（如餐廳、菜單、加點）。</span>
+      </div>
+      <div class="item-row">
+        <span class="item-label">痛點</span>
+        <div class="item-text">
+          <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;">
+            <span class="item-num">1</span>
+            <span>操作延遲：每次切換選項皆需等待 1-2 秒的 GAS 伺服器回應，出現加載動畫，打斷點餐體驗。</span>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;">
+            <span class="item-num">2</span>
+            <span>程式碼維護困難：前後端邏輯與 DOM 操作高度耦合（Spaghetti Code），新增功能容易牽一髮動全身。</span>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:8px;">
+            <span class="item-num">3</span>
+            <span>併發競爭：高頻率讀寫 Google Sheets 導致 LockService 容易遇到超時或資料覆寫風險。</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 02 目標 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#FFF3D6;">
+        <span class="material-icons-outlined" style="color:#D4900A;">flag</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 02</span>
+        <span class="section-title">目標</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="item-row">
+        <span class="priority-badge priority-p1">P1</span>
+        <span class="item-text" style="display:flex;align-items:flex-start;gap:6px;">
+          <span style="color:#0A8A4A;font-size:15px;flex-shrink:0;">&#x2705;</span>
+          <span>載入菜單與選擇餐廳時的網路請求次數降至 0 次（改為初始一次性載入）。</span>
+        </span>
+      </div>
+      <div class="item-row">
+        <span class="priority-badge priority-p1">P1</span>
+        <span class="item-text" style="display:flex;align-items:flex-start;gap:6px;">
+          <span style="color:#0A8A4A;font-size:15px;flex-shrink:0;">&#x2705;</span>
+          <span>分離前端 UI 與資料狀態管理，減少 50% 的直接 DOM 拼接邏輯。</span>
+        </span>
+      </div>
+      <div class="item-row">
+        <span class="priority-badge priority-p2">P2</span>
+        <span class="item-text" style="display:flex;align-items:flex-start;gap:6px;">
+          <span style="color:#0A8A4A;font-size:15px;flex-shrink:0;">&#x2705;</span>
+          <span>引入輕量化前端套件或模組化工具，提升後續開發效率。</span>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 03 限制條件 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#FFE0EC;">
+        <span class="material-icons-outlined" style="color:#D63384;">block</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 03</span>
+        <span class="section-title">限制條件</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="item-row">
+        <span class="item-id">CN-01</span>
+        <span class="item-icon" style="color:#D63384;">&#x1F6AB;</span>
+        <span class="item-text">平台限制：必須繼續依附於 Google Apps Script 與 Google Sheets 架構下運行。</span>
+      </div>
+      <div class="item-row">
+        <span class="item-id">CN-02</span>
+        <span class="item-icon" style="color:#D63384;">&#x1F6AB;</span>
+        <span class="item-text">GAS 記憶體與傳輸限制：單次回傳的 JSON Payload 大小不能無限增加，需控制在合理範圍。</span>
+      </div>
+      <div class="item-row">
+        <span class="item-id">CN-03</span>
+        <span class="item-icon" style="color:#D63384;">&#x1F6AB;</span>
+        <span class="item-text">資料庫效能：Google Sheets 單次寫入/讀取速度上限無法突破，無法與正規 SQL 資料庫相比。</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 04 障礙 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#D6F0FF;">
+        <span class="material-icons-outlined" style="color:#0D7FBF;">construction</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 04</span>
+        <span class="section-title">障礙</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="item-row" style="flex-direction:column;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="item-id">OB-01</span>
+          <span class="item-icon" style="color:#0D7FBF;">&rarr;</span>
+          <span class="item-text" style="font-weight:700;">N+1 查詢導致的卡頓</span>
+        </div>
+        <div class="sub-field">
+          <strong>根因：</strong>連動選單（種類->餐廳->菜單）設計為每次選擇才發送請求向 GAS 索取資料。<br>
+          <strong>影響：</strong>UI 頻繁出現 loading，造成點餐流程至少有 3-5 秒被浪費在等待回應。
+        </div>
+      </div>
+      <div class="item-row" style="flex-direction:column;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="item-id">OB-02</span>
+          <span class="item-icon" style="color:#0D7FBF;">&rarr;</span>
+          <span class="item-text" style="font-weight:700;">全域變數與命令式 DOM 更新</span>
+        </div>
+        <div class="sub-field">
+          <strong>根因：</strong>未使用狀態管理，完全依賴 insertAdjacentHTML 與手動改變 element 狀態。<br>
+          <strong>影響：</strong>Index.html 變得肥大且難以除錯，未來若要新增「多選套餐」等新功能，開發難度極高。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 05 成功標準 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#D6FFE8;">
+        <span class="material-icons-outlined" style="color:#0A8A4A;">verified</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 05</span>
+        <span class="section-title">成功標準</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="item-row">
+        <span class="item-num">1</span>
+        <span class="item-text">使用者開啟頁面後，選擇到完成點餐過程中的 loading 出現次數必須為 0 次。</span>
+      </div>
+      <div class="item-row">
+        <span class="item-num">2</span>
+        <span class="item-text">前端 JavaScript 主邏輯依賴的全域變數數量減少至 2 個以內（例如單一 State Object）。</span>
+      </div>
+      <div class="item-row">
+        <span class="item-num">3</span>
+        <span class="item-text">單一使用者的完成點餐操作總花費時間（從開網頁到送出完成）降低 30%（約省下 5 秒的網路等待）。</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 06 建議方案 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#EEEBFF;">
+        <span class="material-icons-outlined" style="color:#6B5CE7;">lightbulb</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 06</span>
+        <span class="section-title">建議方案</span>
+      </div>
+    </div>
+    <div class="content-box" style="padding:0;overflow:hidden;">
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th style="width:24%;">方案</th>
+            <th style="width:36%;">解決</th>
+            <th style="width:20%;">難度</th>
+            <th style="width:20%;">費用</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="recommend">
+            <td>單一 Payload 預載送 (Pre-fetch All)</td>
+            <td>在 getInitialData 中一次性打包所有餐廳、菜單、加點資料傳回前端，前端以記憶體過濾取代 API 呼叫。</td>
+            <td>低</td>
+            <td>低（僅改寫查詢與前端過濾邏輯）</td>
+          </tr>
+          <tr>
+            <td>導入輕量化前端框架 (如 Vue / Alpine.js)</td>
+            <td>引入 Alpine.js 進行宣告式狀態綁定，消除手動 DOM 操作，提升模組化。</td>
+            <td>中</td>
+            <td>中（需重構現有 HTML 標籤與綁定）</td>
+          </tr>
+          <tr>
+            <td>GAS 現代化建置鏈 (Vite + React)</td>
+            <td>本機使用 React 開發，透過 Vite 與 plugin 打包出單一 HTML 部署至 GAS，徹底解決維護與狀態問題。</td>
+            <td>高</td>
+            <td>高（需全面重寫並建立 CI/CD 或打包腳本）</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ════════════ 07 實施計劃 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#D6FFE8;">
+        <span class="material-icons-outlined" style="color:#0A8A4A;">rocket_launch</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 07</span>
+        <span class="section-title">實施計劃</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="timeline-dot">1</div>
+          <div class="timeline-content">
+            <div class="timeline-title">修改 GAS 後端 getInitialData</div>
+            <div class="timeline-desc">彙整餐廳與菜單資料庫表，並將結果編譯為一個巢狀 JSON Object (包含 Category -> Restaurant -> Items)。</div>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-dot">2</div>
+          <div class="timeline-content">
+            <div class="timeline-title">修改前端連動邏輯</div>
+            <div class="timeline-desc">移除 restaurant-select 與 menu-select 的 google.script.run，改為直接過濾預載的 JSON Object。</div>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-dot">3</div>
+          <div class="timeline-content">
+            <div class="timeline-title">引入狀態管理容器 (輕量)</div>
+            <div class="timeline-desc">將散落的全域變數 (currentMenuItems, employeePaymentData 等) 整合併入一個全域 AppState 物件。</div>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-dot">4</div>
+          <div class="timeline-content">
+            <div class="timeline-title">壓力測試與部署</div>
+            <div class="timeline-desc">測試一次載入 500 筆菜單資料的 Payload 是否會超過 GAS 回傳時間限制，確認無誤後上線。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 08 排除範圍 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#F5F5F5;">
+        <span class="material-icons-outlined" style="color:#666;">do_not_disturb</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 08</span>
+        <span class="section-title">排除範圍</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="exclusion-item">
+        <span class="exclusion-icon">&#x26D4;</span>
+        <span>不更換資料庫：不考慮將資料庫從 Google Sheets 遷移至 Firebase 或 SQL。</span>
+      </div>
+      <div class="exclusion-item">
+        <span class="exclusion-icon">&#x26D4;</span>
+        <span>不重寫現有樣式：保留現有的 CSS（Lifestyle Premium），僅針對 JavaScript 效能優化。</span>
+      </div>
+      <div class="exclusion-item">
+        <span class="exclusion-icon">&#x26D4;</span>
+        <span>不開發管理員後台 UI：僅專注於前端點餐流程的體驗改善。</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 09 風險與假設 ════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-icon" style="background:#FFF3D6;">
+        <span class="material-icons-outlined" style="color:#D4900A;">warning</span>
+      </div>
+      <div class="section-label">
+        <span class="section-num">SECTION 09</span>
+        <span class="section-title">風險與假設</span>
+      </div>
+    </div>
+    <div class="content-box">
+      <div class="sub-block">
+        <div class="sub-block-title">
+          <span style="font-size:15px;">&#x26A0;&#xFE0F;</span>
+          假設
+        </div>
+        <div class="risk-item">
+          <span class="risk-icon" style="color:#D4900A;">&#x26A0;&#xFE0F;</span>
+          <span>假設目前的菜單總數量（所有餐廳加總）在未來一年內不會超過 5000 筆（避免單一 JSON Payload 過大導致載入崩潰）。</span>
+        </div>
+        <div class="risk-item">
+          <span class="risk-icon" style="color:#D4900A;">&#x26A0;&#xFE0F;</span>
+          <span>假設團隊具備基礎的 JSON 操作能力，可以適應從 Database 讀取轉為 Memory 讀取。</span>
+        </div>
+      </div>
+      <div class="sub-block" style="border-top:1px solid #F0EEE9;padding-top:16px;">
+        <div class="sub-block-title">
+          <span style="font-size:15px;">&#x26A0;&#xFE0F;</span>
+          風險
+        </div>
+        <div class="risk-item">
+          <span class="risk-icon" style="color:#D63384;">&#x26A0;&#xFE0F;</span>
+          <span>若是單一 Payload 過大（>5MB），可能導致首屏載入時間超過 10 秒，反而在剛開網頁時造成更糟的體驗。</span>
+        </div>
+        <div class="risk-item">
+          <span class="risk-icon" style="color:#D63384;">&#x26A0;&#xFE0F;</span>
+          <span>多人在同一時間大量送出訂單，Google Sheets 的 LockService 仍有 10 秒等待超時上限，可能導致部份訂單遺失。</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /#capture -->
+
+<script>
+function downloadPNG() {
+  const btn = document.querySelector('.download-btn');
+  btn.style.display = 'none';
+  html2canvas(document.getElementById('capture'), {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: '#F7F6F3'
+  }).then(function(canvas) {
+    const link = document.createElement('a');
+    link.download = '問題規格書.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    btn.style.display = 'block';
+  }).catch(function() {
+    btn.style.display = 'block';
+  });
+}
+</script>
+
+</body>
+</html>

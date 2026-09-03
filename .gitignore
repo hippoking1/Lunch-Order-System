@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+firebase/functions/node_modules/
+
+# Production build outputs
+frontend/dist/
+firebase/functions/lib/
+
+# Environment and sensitive keys
+.env
+.env.local
+frontend/.env
+frontend/.env.local
+serviceAccountKey.json
+lunch-order-export.json
+
+# Firebase logs and cache
+firebase-debug.log*
+firestore-debug.log*
+.firebase/
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
