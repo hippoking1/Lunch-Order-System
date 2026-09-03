@@ -3,14 +3,14 @@ import { getFirestore } from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
 
-// 優先自環境變數讀取，未設定時使用預設專案配置
+// 真實的 Firebase 專案配置 (lunch-order-system-af806)
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDemoKeyForLunchOrderSystem',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyBsmoABWfttnWnwMI2TV53_LMPchmuKB84',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'lunch-order-system-af806.firebaseapp.com',
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'lunch-order-system-af806',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'lunch-order-system-af806.appspot.com',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'lunch-order-system-af806.firebasestorage.app',
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '847905518519',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:847905518519:web:lunchordersystem',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:847905518519:web:8e2ce77203203d5dc8ee32',
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];

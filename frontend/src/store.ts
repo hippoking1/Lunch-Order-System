@@ -8,7 +8,7 @@ import {
   onAuthStateChanged,
   type User as FirebaseUser,
 } from 'firebase/auth';
-import { functions, auth } from './firebase';
+import { functions, auth, db } from './firebase';
 import type {
   AdminData,
   AppTab,
@@ -194,10 +194,13 @@ export const useStore = create<AppState>((set, get) => {
     // ── Init ──
 
     init: async (dateStr?: string) => {
+      const today = dateStr || new Date().toISOString().split('T')[0];
+      set({ loading: true, date: today });
+
+      // 嘗試 1：呼叫 Cloud Functions (標準管道)
       try {
-        set({ loading: true });
         const fn = httpsCallable(functions, 'getInitialData');
-        const res: any = await fn({ dateStr });
+        const res: any = await fn({ dateStr: today });
         const data = res.data as InitialData;
 
         const defaultCategory = '正餐';
@@ -207,7 +210,7 @@ export const useStore = create<AppState>((set, get) => {
         set({
           initialized: true,
           loading: false,
-          date: data.date,
+          date: data.date || today,
           telephones: data.telephones || {},
           employees: data.employees || [],
           summary: data.summary || [],
@@ -218,8 +221,144 @@ export const useStore = create<AppState>((set, get) => {
           selectedCategory: defaultCategory,
           selectedRestaurant: lockedRestId,
         });
+        return;
+      } catch (fnErr: any) {
+        console.warn('[init] Cloud Functions getInitialData failed or cold-starting, falling back to Firestore direct read...', fnErr);
+      }
+
+      // 嘗試 2：Firestore 直連 Fallback (雙保險，保證首頁 1 秒內有菜單)
+      try {
+        const { collection, getDocs } = await import('firebase/firestore');
+        const [usersSnap, restSnap, menuSnap, portionSnap, ordersSnap, confSnap, locksSnap] = await Promise.all([
+          getDocs(collection(db, 'users')),
+          getDocs(collection(db, 'restaurants')),
+          getDocs(collection(db, 'menuItems')),
+          getDocs(collection(db, 'itemPortions')),
+          getDocs(collection(db, 'orders')),
+          getDocs(collection(db, 'confirmations')),
+          getDocs(collection(db, 'categoryLocks')),
+        ]);
+
+        const employees = usersSnap.docs.map((d) => d.id).sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+        const telephones: Record<string, RestaurantTelephone> = {};
+        const restaurants: any[] = [];
+        restSnap.docs.forEach((d) => {
+          const dat = d.data();
+          telephones[d.id] = { name: dat.name || '', telephone: dat.telephone || '' };
+          if (dat.isActive !== false) {
+            restaurants.push({ id: d.id, name: dat.name || '', category: dat.category || '正餐', createdAt: dat.createdAt || '' });
+          }
+        });
+
+        const portionsMap: Record<string, any[]> = {};
+        portionSnap.docs.forEach((d) => {
+          const p = d.data();
+          const key = `${p.restaurantId}_${p.legacyItemId || p.portionName}`;
+          if (!portionsMap[key]) portionsMap[key] = [];
+          portionsMap[key].push({ name: p.portionName, price: Number(p.price || 0) });
+        });
+
+        const items: any[] = [];
+        const extras: any[] = [];
+        menuSnap.docs.forEach((d) => {
+          const m = d.data();
+          if (m.isActive === false) return;
+          const key = `${m.restaurantId}_${m.legacyItemId || d.id}`;
+          const portions = portionsMap[key] || [];
+          if (!m.isExtra) {
+            items.push({
+              id: d.id,
+              restaurantId: m.restaurantId,
+              name: m.itemName,
+              price: Number(m.price || 0),
+              category: m.category || '',
+              image: m.image || '',
+              subCategory: m.subCategory || '',
+              flavors: m.flavors || '',
+              portions,
+              limitedType: m.limitedType || '',
+              startDate: m.startDate || '',
+              endDate: m.endDate || '',
+              createdAt: m.createdAt || ''
+            });
+          } else {
+            extras.push({
+              id: d.id,
+              restaurantId: m.restaurantId,
+              name: m.itemName,
+              price: Number(m.price || 0),
+              type: m.extraType || 'extra',
+              group: m.extraGroup || '加點'
+            });
+          }
+        });
+
+        const summary: OrderRecord[] = [];
+        ordersSnap.docs.forEach((d) => {
+          const o = d.data();
+          if (o.date === today) {
+            summary.push({
+              id: d.id,
+              rowNumber: d.id,
+              employee: o.employeeName || '',
+              restaurantId: o.restaurantId || '',
+              item: o.itemName || '',
+              category: o.category || '其他',
+              subCategory: o.subCategory || '',
+              quantity: Number(o.quantity || 1),
+              unitPrice: Number(o.unitPrice || 0),
+              totalPrice: Number(o.totalPrice || 0),
+              sweetness: o.sweetness || '',
+              ice: o.ice || '',
+              note: o.note || '',
+              paidAmount: o.paidAmount ?? '',
+              changeAmount: o.changeAmount ?? '',
+              isChangeGiven: Boolean(o.isChangeGiven),
+              isPaidByBalance: Boolean(o.isPaidByBalance),
+              createdAt: o.createdAt || ''
+            });
+          }
+        });
+
+        const confirmations: Record<string, any> = {};
+        confSnap.docs.forEach((d) => {
+          const c = d.data();
+          if (c.date === today) {
+            confirmations[c.restaurantId] = { confirmedBy: c.confirmedBy || '', confirmedAt: c.confirmedAt || '' };
+          }
+        });
+
+        const locks: Record<string, any> = {};
+        locksSnap.docs.forEach((d) => {
+          const l = d.data();
+          if (l.date === today) {
+            locks[l.category] = { restaurantId: l.restaurantId, lockedBy: l.lockedBy || '', lockedAt: l.lockedAt || '' };
+          }
+        });
+
+        const defaultCategory = '正餐';
+        set({
+          initialized: true,
+          loading: false,
+          date: today,
+          telephones,
+          employees,
+          summary,
+          confirmations,
+          locks,
+          menuPayload: {
+            restaurants,
+            items,
+            extras,
+            specialPrices: [],
+            newItemDisplayDays: 7
+          },
+          newItemDisplayDays: 7,
+          selectedCategory: defaultCategory,
+          selectedRestaurant: locks[defaultCategory]?.restaurantId || '',
+        });
       } catch (err: any) {
-        console.error('[init] failed:', err);
+        console.error('[init] Firestore direct read also failed:', err);
         set({ initialized: true, loading: false });
       }
     },
