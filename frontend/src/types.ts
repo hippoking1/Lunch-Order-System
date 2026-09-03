@@ -5,6 +5,10 @@ export interface Restaurant {
   id: string;
   name: string;
   category: Category;
+  telephone?: string;
+  isActive?: boolean;
+  sweetnessOptions?: string[] | null;
+  iceOptions?: string[] | null;
   createdAt?: string;
 }
 
@@ -182,7 +186,7 @@ export interface ParsedMenuItem {
   subCategory: string;
   flavors?: string;
   portions: Portion[];
-  changeType: 'add' | 'update' | 'remove' | 'sale';
+  changeType: 'add' | 'update' | 'remove' | 'sale' | 'unchanged';
   oldPrice?: number;
   oldSubCategory?: string;
   oldFlavors?: string;

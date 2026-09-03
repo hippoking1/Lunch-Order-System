@@ -13,7 +13,9 @@ export async function getFullMenuPayloadInternal() {
     id: d.id,
     name: d.data().name || '',
     category: d.data().category || '',
-    createdAt: d.data().createdAt || ''
+    createdAt: d.data().createdAt || '',
+    sweetnessOptions: d.data().sweetnessOptions || null,
+    iceOptions: d.data().iceOptions || null,
   }));
 
   const portionSnap = await db.collection('itemPortions').get();
@@ -231,29 +233,135 @@ export async function applyMenuChangesInternal(restaurantId: string, changes: an
     const itemName = String(change.itemName || change.name || '').trim();
     if (!itemName) continue;
 
-    const existing = await findMenuItemByName(targetRestId, itemName);
+    // 1. 若前端比對已直接給出明確的 itemId，先嘗試直接以 docId 取得
+    let targetDoc: admin.firestore.DocumentSnapshot | null = null;
+    if (change.itemId && change.itemId !== '_OTHER_') {
+      const docSnap = await db.collection('menuItems').doc(change.itemId).get();
+      if (docSnap.exists) {
+        targetDoc = docSnap;
+      }
+    }
+
+    // 2. 若無法依 ID 取得，再依餐廳與正規化名稱搜尋
+    if (!targetDoc) {
+      targetDoc = await findMenuItemByName(targetRestId, itemName);
+    }
 
     if (change.type === 'remove') {
-      if (existing) {
-        await existing.ref.update({ isActive: false });
+      if (targetDoc) {
+        await targetDoc.ref.update({ isActive: false });
         applied++;
       }
-    } else if (change.type === 'add' || change.type === 'update') {
-      await addOrUpdateMenuItemInternal({
-        restaurantId: targetRestId,
-        itemName,
-        price: change.price,
-        category: change.category || existing?.data()?.category || '正餐',
-        subCategory: change.subCategory || existing?.data()?.subCategory || '',
-        flavors: change.flavors || existing?.data()?.flavors || '',
-        limitedType: change.limitedType || existing?.data()?.limitedType || '',
-        portions: change.portions || []
-      });
+    } else if (change.type === 'update') {
+      if (targetDoc) {
+        // 現有品項更新：直接 update 現有 doc，絕不新建重複文件！
+        const updatePayload: any = {
+          price: Number(change.price || 0),
+          isActive: true
+        };
+        if (change.category) updatePayload.category = change.category;
+        if (change.subCategory !== undefined) updatePayload.subCategory = change.subCategory;
+        if (change.flavors !== undefined) updatePayload.flavors = change.flavors;
+        if (change.limitedType !== undefined) updatePayload.limitedType = change.limitedType;
+        await targetDoc.ref.update(updatePayload);
+        applied++;
+      } else {
+        // 若找不到原品項，才 fallback 為新建
+        await addOrUpdateMenuItemInternal({
+          restaurantId: targetRestId,
+          itemName,
+          price: change.price,
+          category: change.category || '正餐',
+          subCategory: change.subCategory || '',
+          flavors: change.flavors || '',
+          limitedType: change.limitedType || '',
+          portions: change.portions || []
+        });
+        applied++;
+      }
+    } else if (change.type === 'add') {
+      // 新增品項：若已有名稱相同品項，自動轉為更新，防止重複添加！
+      if (targetDoc) {
+        await targetDoc.ref.update({
+          price: Number(change.price || 0),
+          subCategory: change.subCategory || targetDoc.data()?.subCategory || '',
+          isActive: true
+        });
+      } else {
+        await addOrUpdateMenuItemInternal({
+          restaurantId: targetRestId,
+          itemName,
+          price: change.price,
+          category: change.category || '正餐',
+          subCategory: change.subCategory || '',
+          flavors: change.flavors || '',
+          limitedType: change.limitedType || '',
+          portions: change.portions || []
+        });
+      }
       applied++;
     }
   }
 
   return { success: true, applied };
+}
+
+// ── 清除資料庫內同餐廳重複品項 ──────────────────────────
+export async function cleanupDuplicateMenuItemsInternal(restaurantId?: string) {
+  let query: admin.firestore.Query = db.collection('menuItems');
+  if (restaurantId && restaurantId !== '__ALL__') {
+    query = query.where('restaurantId', '==', restaurantId);
+  }
+
+  const snap = await query.get();
+  const map = new Map<string, admin.firestore.QueryDocumentSnapshot[]>();
+
+  snap.docs.forEach((doc) => {
+    const d = doc.data();
+    const key = `${d.restaurantId}_${d.normalizedName || normalizeName(d.itemName)}`;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(doc);
+  });
+
+  let deletedCount = 0;
+  const toDelete: admin.firestore.DocumentReference[] = [];
+
+  for (const [, docs] of map.entries()) {
+    if (docs.length > 1) {
+      // 保留第一筆，刪除其餘重複的
+      for (let i = 1; i < docs.length; i++) {
+        toDelete.push(docs[i].ref);
+        deletedCount++;
+      }
+    }
+  }
+
+  const chunkSize = 400;
+  for (let i = 0; i < toDelete.length; i += chunkSize) {
+    const chunk = toDelete.slice(i, i + chunkSize);
+    const batch = db.batch();
+    chunk.forEach(ref => batch.delete(ref));
+    await batch.commit();
+  }
+
+  return { success: true, duplicateGroups: map.size, deletedCount };
+}
+
+// ── 更新飲料餐廳自訂甜度與冰塊選項 ───────────────────────
+export async function updateRestaurantCustomOptionsInternal(data: {
+  restaurantId: string;
+  sweetnessOptions?: string[];
+  iceOptions?: string[];
+}) {
+  const { restaurantId, sweetnessOptions, iceOptions } = data;
+  if (!restaurantId) throw new HttpsError('invalid-argument', '未指定餐廳 ID');
+
+  const updateData: any = {};
+  if (sweetnessOptions !== undefined) updateData.sweetnessOptions = sweetnessOptions;
+  if (iceOptions !== undefined) updateData.iceOptions = iceOptions;
+
+  await db.collection('restaurants').doc(restaurantId).update(updateData);
+  return { success: true };
 }
 
 export async function setSpecialPriceInternal(data: any) {

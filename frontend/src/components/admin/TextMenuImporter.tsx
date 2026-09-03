@@ -172,7 +172,22 @@ export default function TextMenuImporter({ initialRestaurantId }: { initialResta
   const [checkedItems, setCheckedItems] = useState<Set<number>>(new Set());
   const menuPayload = useStore((s) => s.menuPayload);
   const adminApplyChanges = useStore((s) => s.adminApplyChanges);
+  const adminCleanupDuplicates = useStore((s) => s.adminCleanupDuplicates);
   const addToast = useToast((s) => s.addToast);
+  const [cleaning, setCleaning] = useState(false);
+  const [showUnchanged, setShowUnchanged] = useState(false);
+
+  const handleCleanupDuplicates = async () => {
+    setCleaning(true);
+    const targetRest = selectedRestaurant === '__NONE__' ? undefined : selectedRestaurant;
+    const res = await adminCleanupDuplicates(targetRest);
+    setCleaning(false);
+    if (res.ok) {
+      addToast('success', `清理完成！共清除了 ${res.deletedCount || 0} 筆重複品項`);
+    } else {
+      addToast('error', res.error || '清理失敗');
+    }
+  };
 
   const restaurants = useMemo(
     () => menuPayload?.restaurants || [],
@@ -206,12 +221,17 @@ export default function TextMenuImporter({ initialRestaurantId }: { initialResta
     }
 
     setParsedItems(result);
-    setCheckedItems(new Set(result.map((_, i) => i)));
+    // 預設僅勾選真正有異動之品項 (排除 unchanged)
+    const changedIndices = result
+      .map((item, i) => (item.changeType !== 'unchanged' ? i : -1))
+      .filter((i) => i !== -1);
+    setCheckedItems(new Set(changedIndices));
 
     if (result.length === 0) {
       addToast('info', '未找到可比對的品項內容');
     } else {
-      addToast('success', `成功解析 ${result.length} 項品項，已加入待審變更`);
+      const changeCount = changedIndices.length;
+      addToast('success', `成功解析 ${result.length} 項品項，其中 ${changeCount} 項有異動待審`);
     }
   };
 
@@ -225,7 +245,10 @@ export default function TextMenuImporter({ initialRestaurantId }: { initialResta
   };
 
   const selectAll = () => {
-    setCheckedItems(new Set(parsedItems.map((_, i) => i)));
+    const changed = parsedItems
+      .map((item, i) => (item.changeType !== 'unchanged' ? i : -1))
+      .filter((i) => i !== -1);
+    setCheckedItems(new Set(changed));
   };
 
   const deselectAll = () => {
@@ -277,41 +300,50 @@ export default function TextMenuImporter({ initialRestaurantId }: { initialResta
 
   const grouped = useMemo(() => {
     const map: Record<string, ParsedMenuItem[]> = {
-      add: [],
       update: [],
+      add: [],
       remove: [],
       sale: [],
+      unchanged: [],
     };
     parsedItems.forEach((item) => {
-      (map[item.changeType] || map.add).push(item);
+      const ct = item.changeType || 'add';
+      if (!map[ct]) map[ct] = [];
+      map[ct].push(item);
     });
     return map;
   }, [parsedItems]);
 
-  const typeConfig = {
-    add: {
-      label: '新增品項 (ADD)',
-      icon: Check,
-      color: 'var(--success)',
-      badge: 'badge-success',
-    },
+  const typeConfig: Record<string, any> = {
     update: {
-      label: '待審變更 / 內容與價格異動 (UPDATE)',
+      label: '⚡ 待審變更 / 內容與價格異動 (UPDATE)',
       icon: Zap,
       color: 'var(--warning)',
       badge: 'badge-warning',
     },
+    add: {
+      label: '✨ 新增品項 (ADD)',
+      icon: Check,
+      color: 'var(--success)',
+      badge: 'badge-success',
+    },
     remove: {
-      label: '停售品項 (REMOVE)',
+      label: '❌ 停售品項 (REMOVE)',
       icon: X,
       color: 'var(--error)',
       badge: 'badge-error',
     },
     sale: {
-      label: '特價設定 (SALE)',
+      label: '🔥 特價設定 (SALE)',
       icon: AlertTriangle,
       color: 'var(--primary)',
       badge: 'badge-primary',
+    },
+    unchanged: {
+      label: '✅ 內容完全一致 (無須變更)',
+      icon: Check,
+      color: 'var(--text-muted)',
+      badge: 'badge-default',
     },
   };
 
@@ -391,15 +423,24 @@ export default function TextMenuImporter({ initialRestaurantId }: { initialResta
                 共有 <b>{parsedItems.length}</b> 項比對結果，勾選欲調整之內容後點擊下方按鈕以批次套用至資料庫。
               </p>
             </div>
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-2 items-center flex-wrap">
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={handleCleanupDuplicates}
+                disabled={cleaning}
+                title="掃描同餐廳同品項的重複文件並一鍵清除多餘品項"
+              >
+                {cleaning ? <RefreshCw size={14} className="animate-spin" /> : '🧹 一鍵清理重複品項'}
+              </button>
               <button className="btn btn-ghost btn-sm" onClick={selectAll}>
-                全選
+                全選異動
               </button>
               <button className="btn btn-ghost btn-sm" onClick={deselectAll}>
                 取消全選
               </button>
               <span className="caption font-semibold">
-                ({checkedItems.size} / {parsedItems.length} 已選擇)
+                ({checkedItems.size} / {parsedItems.filter(p => p.changeType !== 'unchanged').length} 待更新)
               </span>
             </div>
           </div>
@@ -476,17 +517,25 @@ export default function TextMenuImporter({ initialRestaurantId }: { initialResta
                             {item.fieldDiffs?.map((diff, di) => (
                               <div
                                 key={di}
-                                className="caption"
+                                className="flex items-center gap-1.5"
                                 style={{
-                                  background: 'rgba(255, 180, 0, 0.15)',
-                                  color: 'var(--warning)',
-                                  padding: '2px 8px',
-                                  borderRadius: 4,
+                                  background: 'rgba(59, 130, 246, 0.12)',
+                                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                                  padding: '3px 10px',
+                                  borderRadius: 6,
                                   fontSize: 12,
                                 }}
                               >
-                                <b>{diff.label}：</b>
-                                <s style={{ opacity: 0.7 }}>{diff.oldVal}</s> → <b>{diff.newVal}</b>
+                                <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                  {diff.label}:
+                                </span>
+                                <span style={{ color: '#ef4444', textDecoration: 'line-through', opacity: 0.85 }}>
+                                  {diff.oldVal}
+                                </span>
+                                <span style={{ color: 'var(--text-muted)' }}>➔</span>
+                                <span style={{ color: '#10b981', fontWeight: 700 }}>
+                                  {diff.newVal}
+                                </span>
                               </div>
                             ))}
                           </div>
@@ -540,6 +589,54 @@ export default function TextMenuImporter({ initialRestaurantId }: { initialResta
               </div>
             );
           })}
+
+          {/* Unchanged Items Accordion */}
+          {grouped.unchanged && grouped.unchanged.length > 0 && (
+            <div
+              className="mb-4 p-3"
+              style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px dashed var(--glass-border)',
+                borderRadius: 8,
+              }}
+            >
+              <div
+                className="flex justify-between items-center cursor-pointer"
+                onClick={() => setShowUnchanged(!showUnchanged)}
+              >
+                <div className="flex items-center gap-2">
+                  <Check size={16} style={{ color: 'var(--text-muted)' }} />
+                  <span className="font-semibold text-sm" style={{ color: 'var(--text-muted)' }}>
+                    ✅ 內容完全一致 / 無須變更 (UNCHANGED)
+                  </span>
+                  <span className="badge badge-default" style={{ fontSize: 11 }}>
+                    {grouped.unchanged.length} 項
+                  </span>
+                </div>
+                <span className="caption" style={{ color: 'var(--primary)', cursor: 'pointer' }}>
+                  {showUnchanged ? '點擊折疊 ▲' : '點擊展開查看 ▼'}
+                </span>
+              </div>
+
+              {showUnchanged && (
+                <div className="flex flex-col gap-1.5 mt-3 pt-3" style={{ borderTop: '1px solid var(--glass-border)' }}>
+                  {grouped.unchanged.map((item, ui) => (
+                    <div
+                      key={ui}
+                      className="flex items-center justify-between text-xs py-1 px-2"
+                      style={{ opacity: 0.7 }}
+                    >
+                      <span className="mono">ID: {item.itemId || item.matchedItemId || '-'}</span>
+                      <span className="font-medium flex-1 px-3">{item.name}</span>
+                      <span>{item.subCategory || '-'}</span>
+                      <span className="mono px-3 font-semibold">${item.price}</span>
+                      <span className="badge badge-default" style={{ fontSize: 10 }}>完全一致</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <hr className="divider" />
           <div className="flex gap-3 justify-end items-center">

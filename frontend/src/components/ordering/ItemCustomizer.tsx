@@ -90,6 +90,18 @@ export default function ItemCustomizer() {
     freeExtrasCount,
   ]);
 
+  const currentRest = useMemo(() => {
+    return store.menuPayload?.restaurants.find((r) => r.id === store.selectedRestaurant);
+  }, [store.menuPayload, store.selectedRestaurant]);
+
+  const sweetnessOptions = currentRest?.sweetnessOptions && currentRest.sweetnessOptions.length > 0
+    ? currentRest.sweetnessOptions
+    : SWEETNESS_OPTIONS;
+
+  const iceOptions = currentRest?.iceOptions && currentRest.iceOptions.length > 0
+    ? currentRest.iceOptions
+    : ICE_OPTIONS;
+
   const isDrink =
     store.selectedItem?.category === '飲料' ||
     store.selectedCategory === '飲料';
@@ -168,7 +180,7 @@ export default function ItemCustomizer() {
               value={store.sweetness}
               onChange={(e) => store.setOption('sweetness', e.target.value)}
             >
-              {SWEETNESS_OPTIONS.map((s) => (
+              {sweetnessOptions.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
@@ -181,7 +193,7 @@ export default function ItemCustomizer() {
               value={store.ice}
               onChange={(e) => store.setOption('ice', e.target.value)}
             >
-              {ICE_OPTIONS.map((i) => (
+              {iceOptions.map((i) => (
                 <option key={i} value={i}>
                   {i}
                 </option>

@@ -16,7 +16,8 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { useToast } from '../../hooks/useToast';
-import type { Category } from '../../types';
+import { SWEETNESS_OPTIONS, ICE_OPTIONS } from '../../constants';
+import type { Category, Restaurant } from '../../types';
 
 interface Props {
   onNavigateToImport: (restaurantId: string) => void;
@@ -32,6 +33,9 @@ export default function RestaurantManager({
   const adminUpdateRestaurant = useStore((s) => s.adminUpdateRestaurant);
   const adminToggleRestaurantActive = useStore(
     (s) => s.adminToggleRestaurantActive,
+  );
+  const adminUpdateRestaurantCustomOptions = useStore(
+    (s) => s.adminUpdateRestaurantCustomOptions,
   );
   const addToast = useToast((s) => s.addToast);
 
@@ -66,6 +70,50 @@ export default function RestaurantManager({
     id: string;
     name: string;
   } | null>(null);
+
+  // Drink options modal state
+  const [customizingDrinkRest, setCustomizingDrinkRest] = useState<Restaurant | null>(null);
+  const [sweetnessList, setSweetnessList] = useState<string[]>([]);
+  const [iceList, setIceList] = useState<string[]>([]);
+  const [newSweetItem, setNewSweetItem] = useState('');
+  const [newIceItem, setNewIceItem] = useState('');
+
+  const handleOpenDrinkOptions = (r: Restaurant) => {
+    setCustomizingDrinkRest(r);
+    setSweetnessList(
+      r.sweetnessOptions && r.sweetnessOptions.length > 0
+        ? [...r.sweetnessOptions]
+        : [...SWEETNESS_OPTIONS],
+    );
+    setIceList(
+      r.iceOptions && r.iceOptions.length > 0
+        ? [...r.iceOptions]
+        : [...ICE_OPTIONS],
+    );
+    setNewSweetItem('');
+    setNewIceItem('');
+  };
+
+  const handleSaveDrinkOptions = async () => {
+    if (!customizingDrinkRest) return;
+    const res = await adminUpdateRestaurantCustomOptions({
+      restaurantId: customizingDrinkRest.id,
+      sweetnessOptions: sweetnessList,
+      iceOptions: iceList,
+    });
+    if (res.ok) {
+      addToast('success', `已儲存「${customizingDrinkRest.name}」的甜度冰塊規格！`);
+      setCustomizingDrinkRest(null);
+    } else {
+      addToast('error', res.error || '儲存失敗');
+    }
+  };
+
+  const handleResetDrinkDefaults = () => {
+    setSweetnessList([...SWEETNESS_OPTIONS]);
+    setIceList([...ICE_OPTIONS]);
+    addToast('info', '已重置為系統預設選項，請點擊「儲存規格」生效');
+  };
 
   const restaurants = menuPayload?.restaurants || [];
   const items = menuPayload?.items || [];
@@ -446,6 +494,17 @@ export default function RestaurantManager({
                   >
                     <ListFilter size={12} /> 查品項
                   </button>
+                  {r.category === '飲料' && (
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-xs flex items-center gap-1"
+                      onClick={() => handleOpenDrinkOptions(r)}
+                      title="自訂此飲料店的甜度與冰塊選項"
+                      style={{ padding: '4px 8px', fontSize: 12, borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                    >
+                      🥤 規格選項
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-1">
@@ -481,6 +540,187 @@ export default function RestaurantManager({
       {filteredRestaurants.length === 0 && (
         <div className="card text-center py-8">
           <p style={{ color: 'var(--text-muted)' }}>查無符合的餐廳</p>
+        </div>
+      )}
+
+      {/* Drink Options Customization Modal */}
+      {customizingDrinkRest && (
+        <div
+          className="modal-overlay"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.7)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: 16,
+          }}
+        >
+          <div
+            className="card animate-scale-up"
+            style={{
+              maxWidth: 540,
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              border: '2px solid var(--primary)',
+            }}
+          >
+            <div className="flex justify-between items-center mb-3">
+              <div>
+                <h3 className="h3 flex items-center gap-2">
+                  🥤 自訂飲料選項規格
+                </h3>
+                <p className="caption" style={{ color: 'var(--primary)', fontWeight: 600 }}>
+                  {customizingDrinkRest.name} (飲料店專屬)
+                </p>
+              </div>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setCustomizingDrinkRest(null)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Sweetness section */}
+            <div className="mb-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-semibold text-sm">🍬 甜度選項列表 ({sweetnessList.length})</span>
+                <span className="caption">點擊 ✕ 刪除不提供的甜度</span>
+              </div>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {sweetnessList.map((opt, idx) => (
+                  <span
+                    key={idx}
+                    className="badge badge-default flex items-center gap-1"
+                    style={{ padding: '4px 8px', fontSize: 13 }}
+                  >
+                    {opt}
+                    <X
+                      size={12}
+                      style={{ cursor: 'pointer', opacity: 0.7 }}
+                      onClick={() => setSweetnessList(sweetnessList.filter((_, i) => i !== idx))}
+                    />
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="新增自訂甜度 (例：僅供正常與半糖兩種選擇、固定甜度、二分糖)"
+                  value={newSweetItem}
+                  onChange={(e) => setNewSweetItem(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newSweetItem.trim()) {
+                      e.preventDefault();
+                      setSweetnessList([...sweetnessList, newSweetItem.trim()]);
+                      setNewSweetItem('');
+                    }
+                  }}
+                  style={{ flex: 1, fontSize: 13 }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  disabled={!newSweetItem.trim()}
+                  onClick={() => {
+                    if (newSweetItem.trim()) {
+                      setSweetnessList([...sweetnessList, newSweetItem.trim()]);
+                      setNewSweetItem('');
+                    }
+                  }}
+                >
+                  <Plus size={14} /> 新增
+                </button>
+              </div>
+            </div>
+
+            {/* Ice section */}
+            <div className="mb-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-semibold text-sm">🧊 冰塊選項列表 ({iceList.length})</span>
+                <span className="caption">點擊 ✕ 刪除不提供的冰塊</span>
+              </div>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {iceList.map((opt, idx) => (
+                  <span
+                    key={idx}
+                    className="badge badge-default flex items-center gap-1"
+                    style={{ padding: '4px 8px', fontSize: 13 }}
+                  >
+                    {opt}
+                    <X
+                      size={12}
+                      style={{ cursor: 'pointer', opacity: 0.7 }}
+                      onClick={() => setIceList(iceList.filter((_, i) => i !== idx))}
+                    />
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="新增自訂冰塊 (例：完全去冰、微碎冰、固定冰量、常溫)"
+                  value={newIceItem}
+                  onChange={(e) => setNewIceItem(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newIceItem.trim()) {
+                      e.preventDefault();
+                      setIceList([...iceList, newIceItem.trim()]);
+                      setNewIceItem('');
+                    }
+                  }}
+                  style={{ flex: 1, fontSize: 13 }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  disabled={!newIceItem.trim()}
+                  onClick={() => {
+                    if (newIceItem.trim()) {
+                      setIceList([...iceList, newIceItem.trim()]);
+                      setNewIceItem('');
+                    }
+                  }}
+                >
+                  <Plus size={14} /> 新增
+                </button>
+              </div>
+            </div>
+
+            <div
+              className="flex justify-between items-center pt-3 mt-4"
+              style={{ borderTop: '1px solid var(--glass-border)' }}
+            >
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={handleResetDrinkDefaults}
+              >
+                還原系統預設選項
+              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setCustomizingDrinkRest(null)}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleSaveDrinkOptions}
+                >
+                  儲存選項規格
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

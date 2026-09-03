@@ -130,17 +130,40 @@ export async function saveEmployeePaymentInternal(data: {
 export async function getOrderSummaryInternal(dateString: string) {
   const snap = await db.collection('orders')
     .where('date', '==', dateString)
-    .orderBy('createdAt', 'asc')
     .get();
 
-  return snap.docs.map((doc) => {
+  // 若有未知餐點，延遲載入 menuItems 建立快速查找表
+  let legacyMenuMap: Map<string, string> | null = null;
+
+  const orders = await Promise.all(snap.docs.map(async (doc) => {
     const d = doc.data();
+    let itemName = String(d.itemName || '').trim();
+
+    if (!itemName || itemName === '未知餐點') {
+      if (!legacyMenuMap) {
+        legacyMenuMap = new Map();
+        const mSnap = await db.collection('menuItems').get();
+        mSnap.docs.forEach((mdoc) => {
+          const md = mdoc.data();
+          if (md.restaurantId && md.legacyItemId && md.itemName) {
+            legacyMenuMap!.set(`${md.restaurantId}_${md.legacyItemId}`, md.itemName);
+          }
+        });
+      }
+      const resolved = legacyMenuMap.get(`${d.restaurantId}_${d.legacyItemId}`);
+      if (resolved) {
+        itemName = resolved;
+        // 順便非同步修復資料庫文檔
+        doc.ref.update({ itemName: resolved }).catch(() => {});
+      }
+    }
+
     return {
       id: doc.id,
       rowNumber: doc.id,
       employee: d.employeeName || '',
       restaurantId: d.restaurantId || '',
-      item: d.itemName || '',
+      item: itemName || '未知餐點',
       category: d.category || '其他',
       subCategory: d.subCategory || '',
       quantity: Number(d.quantity || 0),
@@ -155,7 +178,11 @@ export async function getOrderSummaryInternal(dateString: string) {
       isPaidByBalance: Boolean(d.isPaidByBalance),
       createdAt: d.createdAt || ''
     };
-  });
+  }));
+
+  // 記憶體排序 createdAt，避免依賴外部複合索引
+  orders.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  return orders;
 }
 
 export async function updateOrderNoteInternal(orderId: string, newNote: string) {

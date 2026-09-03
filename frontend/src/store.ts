@@ -138,6 +138,11 @@ interface AppState {
   adminSetSpecialPrice: (data: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
   adminRemoveSpecialPrice: (restaurantId: string, itemId: string, portionName: string) => Promise<{ ok: boolean; error?: string }>;
   adminUpdateNewItemDisplayDays: (days: number) => Promise<{ ok: boolean; error?: string }>;
+  adminAddExtra: (data: { restaurantId: string; name: string; price: number; group?: string; type?: 'extra' | 'single' }) => Promise<{ ok: boolean; error?: string }>;
+  adminUpdateExtra: (data: { id: string; name?: string; price?: number; group?: string; type?: 'extra' | 'single' }) => Promise<{ ok: boolean; error?: string }>;
+  adminDeleteExtra: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  adminUpdateRestaurantCustomOptions: (data: { restaurantId: string; sweetnessOptions?: string[]; iceOptions?: string[] }) => Promise<{ ok: boolean; error?: string }>;
+  adminCleanupDuplicates: (restaurantId?: string) => Promise<{ ok: boolean; deletedCount?: number; error?: string }>;
 }
 
 // ── Store ─────────────────────────────────────────────
@@ -1082,6 +1087,98 @@ export const useStore = create<AppState>((set, get) => {
         set({ newItemDisplayDays: days });
         return { ok: true };
       } catch (e: any) {
+        return { ok: false, error: e.message };
+      }
+    },
+
+    adminAddExtra: async (data) => {
+      set({ adminLoading: true });
+      try {
+        const fn = httpsCallable(functions, 'addMenuItem');
+        await fn({
+          restaurantId: data.restaurantId,
+          itemName: data.name,
+          price: data.price,
+          isExtra: true,
+          extraGroup: data.group || '加點',
+          extraType: data.type || 'extra',
+          category: '加點',
+          adminName: get().selectedEmployee,
+        });
+        set({ adminLoading: false });
+        await get().loadAdminData();
+        await get().init(get().date);
+        return { ok: true };
+      } catch (e: any) {
+        set({ adminLoading: false });
+        return { ok: false, error: e.message };
+      }
+    },
+
+    adminUpdateExtra: async (data) => {
+      set({ adminLoading: true });
+      try {
+        const fn = httpsCallable(functions, 'updateMenuItem');
+        await fn({
+          itemId: data.id,
+          itemName: data.name,
+          price: data.price,
+          isExtra: true,
+          extraGroup: data.group,
+          extraType: data.type,
+          adminName: get().selectedEmployee,
+        });
+        set({ adminLoading: false });
+        await get().loadAdminData();
+        await get().init(get().date);
+        return { ok: true };
+      } catch (e: any) {
+        set({ adminLoading: false });
+        return { ok: false, error: e.message };
+      }
+    },
+
+    adminDeleteExtra: async (id) => {
+      set({ adminLoading: true });
+      try {
+        const fn = httpsCallable(functions, 'deactivateMenuItem');
+        await fn({ itemId: id, adminName: get().selectedEmployee });
+        set({ adminLoading: false });
+        await get().loadAdminData();
+        await get().init(get().date);
+        return { ok: true };
+      } catch (e: any) {
+        set({ adminLoading: false });
+        return { ok: false, error: e.message };
+      }
+    },
+
+    adminUpdateRestaurantCustomOptions: async (data) => {
+      set({ adminLoading: true });
+      try {
+        const fn = httpsCallable(functions, 'updateRestaurantCustomOptions');
+        await fn({ ...data, adminName: get().selectedEmployee });
+        set({ adminLoading: false });
+        await get().loadAdminData();
+        await get().init(get().date);
+        return { ok: true };
+      } catch (e: any) {
+        set({ adminLoading: false });
+        return { ok: false, error: e.message };
+      }
+    },
+
+    adminCleanupDuplicates: async (restaurantId) => {
+      set({ adminLoading: true });
+      try {
+        const fn = httpsCallable(functions, 'cleanupDuplicateMenuItems');
+        const res: any = await fn({ restaurantId, adminName: get().selectedEmployee });
+        set({ adminLoading: false });
+        await get().loadAdminData();
+        await get().init(get().date);
+        return { ok: true, deletedCount: res.data?.deletedCount || 0 };
+      } catch (e: any) {
+        set({ adminLoading: false });
         return { ok: false, error: e.message };
       }
     },

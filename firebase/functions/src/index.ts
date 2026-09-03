@@ -30,7 +30,9 @@ import {
   reactivateMenuItemInternal,
   applyMenuChangesInternal,
   setSpecialPriceInternal,
-  removeSpecialPriceInternal
+  removeSpecialPriceInternal,
+  cleanupDuplicateMenuItemsInternal,
+  updateRestaurantCustomOptionsInternal
 } from './menu';
 
 import {
@@ -290,5 +292,67 @@ export const resetExistingTimestampsToLegacy = onRequest({ region: 'asia-east1',
     message: '已成功將所有既存餐廳與餐點建立時間設為歷史時間！',
     restaurants: restSnap.size,
     menuItems: menuSnap.size
+  });
+});
+
+export const cleanupDuplicateMenuItems = onCall({ region: 'asia-east1', cors: true }, async (request) => {
+  await assertAdmin(request);
+  return await cleanupDuplicateMenuItemsInternal(request.data?.restaurantId);
+});
+
+export const updateRestaurantCustomOptions = onCall({ region: 'asia-east1', cors: true }, async (request) => {
+  await assertAdmin(request);
+  return await updateRestaurantCustomOptionsInternal(request.data);
+});
+
+export const fixHistoricalOrdersItemNames = onRequest({ region: 'asia-east1', cors: true }, async (req, res) => {
+  const menuSnap = await db.collection('menuItems').get();
+  const menuMap = new Map<string, string>();
+  menuSnap.docs.forEach((doc) => {
+    const d = doc.data();
+    if (d.restaurantId && d.legacyItemId && d.itemName) {
+      menuMap.set(`${d.restaurantId}_${d.legacyItemId}`, d.itemName);
+    }
+  });
+
+  const orderSnap = await db.collection('orders').get();
+  let updatedCount = 0;
+  const chunks: FirebaseFirestore.DocumentSnapshot[][] = [];
+  const allDocs = orderSnap.docs;
+  for (let i = 0; i < allDocs.length; i += 400) {
+    chunks.push(allDocs.slice(i, i + 400));
+  }
+
+  for (const chunk of chunks) {
+    const batch = db.batch();
+    chunk.forEach((doc) => {
+      const o = doc.data();
+      if (!o) return;
+      if (!o.itemName || o.itemName === '未知餐點') {
+        const key = `${o.restaurantId}_${o.legacyItemId}`;
+        const realName = menuMap.get(key);
+        if (realName) {
+          batch.update(doc.ref, { itemName: realName });
+          updatedCount++;
+        }
+      }
+    });
+    await batch.commit();
+  }
+
+  res.json({
+    success: true,
+    totalOrders: orderSnap.size,
+    updatedCount,
+    message: `已成功修復 ${updatedCount} 筆歷史訂單的餐點名稱！`
+  });
+});
+
+export const runCleanupDuplicates = onRequest({ region: 'asia-east1', cors: true }, async (req, res) => {
+  const restId = typeof req.query.restaurantId === 'string' ? req.query.restaurantId : undefined;
+  const result = await cleanupDuplicateMenuItemsInternal(restId);
+  res.json({
+    ...result,
+    message: `成功清理 ${result.deletedCount} 個重複品項！`,
   });
 });

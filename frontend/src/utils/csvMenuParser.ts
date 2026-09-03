@@ -23,6 +23,12 @@ function normalizeName(name: string): string {
     .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) =>
       String.fromCharCode(s.charCodeAt(0) - 65248),
     )
+    .replace(/（/g, '(')
+    .replace(/）/g, ')')
+    .replace(/【/g, '[')
+    .replace(/】/g, ']')
+    .replace(/，/g, ',')
+    .replace(/：/g, ':')
     .toLowerCase();
 }
 
@@ -255,7 +261,7 @@ export function parseCsvMenuText(
         subCategory: row.subCategory || existing.subCategory,
         flavors: row.flavors || existing.flavors,
         portions: portions.length > 0 ? portions : existing.portions || [],
-        changeType: 'update',
+        changeType: diffs.length > 0 ? 'update' : 'unchanged',
         oldPrice: existing.price,
         oldSubCategory: existing.subCategory,
         oldFlavors: existing.flavors,

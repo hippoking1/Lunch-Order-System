@@ -24,12 +24,16 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
   const newItemDisplayDays = useStore((s) => s.newItemDisplayDays);
   const adminUpdateNewItemDisplayDays = useStore((s) => s.adminUpdateNewItemDisplayDays);
   const adminAddRestaurant = useStore((s) => s.adminAddRestaurant);
+  const adminAddExtra = useStore((s) => s.adminAddExtra);
+  const adminUpdateExtra = useStore((s) => s.adminUpdateExtra);
+  const adminDeleteExtra = useStore((s) => s.adminDeleteExtra);
   const [displayDaysInput, setDisplayDaysInput] = useState(String(newItemDisplayDays));
   const [addingRest, setAddingRest] = useState(false);
   const [newRest, setNewRest] = useState({ name: '', category: '正餐' as string, telephone: '' });
 
   const [search, setSearch] = useState('');
   const [selectedRest, setSelectedRest] = useState(initialRestaurantId || '__ALL__');
+  const [itemSection, setItemSection] = useState<'items' | 'extras'>('items');
   const [editing, setEditing] = useState<EditingItem | null>(null);
   const [adding, setAdding] = useState(false);
   const [newItem, setNewItem] = useState({
@@ -39,6 +43,22 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
     subCategory: '',
     flavors: '',
   });
+
+  const [addingExtra, setAddingExtra] = useState(false);
+  const [newExtra, setNewExtra] = useState({
+    name: '',
+    price: '',
+    group: '加料',
+    type: 'extra' as 'extra' | 'single',
+  });
+  const [editingExtra, setEditingExtra] = useState<{
+    id: string;
+    name: string;
+    price: number;
+    group: string;
+    type: 'extra' | 'single';
+  } | null>(null);
+
   const [confirmDelete, setConfirmDelete] = useState<{
     restaurantId: string;
     itemId: string;
@@ -60,6 +80,67 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
     }
     return list;
   }, [menuPayload, selectedRest, search]);
+
+  const allExtras = menuPayload?.extras || [];
+  const extras = useMemo(() => {
+    let list = allExtras;
+    if (selectedRest !== '__ALL__') {
+      list = list.filter((e) => e.restaurantId === selectedRest);
+    }
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(
+        (e) =>
+          e.name.toLowerCase().includes(q) ||
+          (e.group && e.group.toLowerCase().includes(q)),
+      );
+    }
+    return list;
+  }, [allExtras, selectedRest, search]);
+
+  const handleAddExtra = async () => {
+    if (selectedRest === '__ALL__' || !newExtra.name.trim() || !newExtra.price) return;
+    const res = await adminAddExtra({
+      restaurantId: selectedRest,
+      name: newExtra.name.trim(),
+      price: Number(newExtra.price),
+      group: newExtra.group.trim() || '加料',
+      type: newExtra.type,
+    });
+    if (res.ok) {
+      addToast('success', `已新增加點「${newExtra.name.trim()}」`);
+      setAddingExtra(false);
+      setNewExtra({ name: '', price: '', group: '加料', type: 'extra' });
+    } else {
+      addToast('error', res.error || '新增加點失敗');
+    }
+  };
+
+  const handleSaveEditExtra = async () => {
+    if (!editingExtra || !editingExtra.name.trim()) return;
+    const res = await adminUpdateExtra({
+      id: editingExtra.id,
+      name: editingExtra.name.trim(),
+      price: Number(editingExtra.price),
+      group: editingExtra.group.trim(),
+      type: editingExtra.type,
+    });
+    if (res.ok) {
+      addToast('success', '加點項目已更新');
+      setEditingExtra(null);
+    } else {
+      addToast('error', res.error || '更新失敗');
+    }
+  };
+
+  const handleDeleteExtra = async (id: string, name: string) => {
+    const res = await adminDeleteExtra(id);
+    if (res.ok) {
+      addToast('success', `已刪除加點「${name}」`);
+    } else {
+      addToast('error', res.error || '刪除失敗');
+    }
+  };
 
   const getRestName = (id: string) =>
     restaurants.find((r) => r.id === id)?.name || id;
@@ -151,13 +232,23 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <button
-            className="btn btn-primary"
-            onClick={() => setAdding(true)}
-            disabled={selectedRest === '__ALL__'}
-          >
-            <Plus size={16} /> 新增品項
-          </button>
+          {itemSection === 'items' ? (
+            <button
+              className="btn btn-primary"
+              onClick={() => setAdding(true)}
+              disabled={selectedRest === '__ALL__'}
+            >
+              <Plus size={16} /> 新增品項
+            </button>
+          ) : (
+            <button
+              className="btn btn-primary"
+              onClick={() => setAddingExtra(true)}
+              disabled={selectedRest === '__ALL__'}
+            >
+              <Plus size={16} /> 新增加點配料
+            </button>
+          )}
           <button
             className="btn btn-outline"
             onClick={() => setAddingRest(true)}
@@ -322,21 +413,209 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
         </div>
       )}
 
-      {/* Items list */}
-      <div className="card">
-        <div className="flex justify-between items-center mb-3">
-          <div className="h3">品項列表</div>
-          <span className="caption">{items.length} 項</span>
-        </div>
-
-        {items.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-state-icon">📋</div>
-            <div className="empty-state-title">沒有品項</div>
-            <div className="empty-state-desc">選擇餐廳並新增品項</div>
+      {/* Add Extra form */}
+      {addingExtra && selectedRest !== '__ALL__' && (
+        <div className="card card-section animate-slide-up" style={{ border: '1.5px solid var(--accent)' }}>
+          <div className="h3 mb-3 flex items-center gap-2" style={{ color: 'var(--accent)' }}>
+            <Plus size={18} /> 新增加點 / 配料項目
           </div>
-        ) : (
-          <div className="admin-items-list">
+          <div className="flex gap-3" style={{ flexWrap: 'wrap' }}>
+            <input
+              placeholder="加點名稱 (例：加珍珠、加蛋、微辣)"
+              value={newExtra.name}
+              onChange={(e) => setNewExtra({ ...newExtra, name: e.target.value })}
+              style={{ flex: 2, minWidth: 150 }}
+              autoFocus
+            />
+            <input
+              type="number"
+              placeholder="加購價 (元)"
+              value={newExtra.price}
+              onChange={(e) => setNewExtra({ ...newExtra, price: e.target.value })}
+              style={{ width: 100 }}
+            />
+            <input
+              placeholder="群組 (例：加料、辣度、升級)"
+              value={newExtra.group}
+              onChange={(e) => setNewExtra({ ...newExtra, group: e.target.value })}
+              style={{ width: 140 }}
+            />
+            <select
+              value={newExtra.type}
+              onChange={(e) => setNewExtra({ ...newExtra, type: e.target.value as 'extra' | 'single' })}
+              style={{ width: 140 }}
+            >
+              <option value="extra">可複選 (加料)</option>
+              <option value="single">單選互斥 (規格)</option>
+            </select>
+          </div>
+          <div className="flex gap-3 mt-3 justify-end">
+            <button className="btn btn-ghost" onClick={() => setAddingExtra(false)}>
+              取消
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={handleAddExtra}
+              disabled={!newExtra.name.trim() || !newExtra.price}
+            >
+              <Save size={16} /> 儲存加點
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Section switcher */}
+      <div className="flex gap-2 mb-1">
+        <button
+          type="button"
+          className={classNames('btn btn-sm', {
+            'btn-primary': itemSection === 'items',
+            'btn-ghost': itemSection !== 'items',
+          })}
+          onClick={() => setItemSection('items')}
+          style={{ fontSize: 13, padding: '6px 14px' }}
+        >
+          📋 正式菜單品項 ({items.length})
+        </button>
+        <button
+          type="button"
+          className={classNames('btn btn-sm', {
+            'btn-primary': itemSection === 'extras',
+            'btn-ghost': itemSection !== 'extras',
+          })}
+          onClick={() => setItemSection('extras')}
+          style={{ fontSize: 13, padding: '6px 14px' }}
+        >
+          ➕ 加點 / 配料項目 ({extras.length})
+        </button>
+      </div>
+
+      {/* Main List Section */}
+      {itemSection === 'extras' ? (
+        <div className="card">
+          <div className="flex justify-between items-center mb-3">
+            <div className="h3">加點配料清單</div>
+            <span className="caption">{extras.length} 項</span>
+          </div>
+
+          {extras.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">➕</div>
+              <div className="empty-state-title">尚未有加點項目</div>
+              <div className="empty-state-desc">
+                {selectedRest === '__ALL__' ? '請先選擇指定餐廳再新增加點項目' : '點擊上方按鈕為此餐廳新增加點項目'}
+              </div>
+            </div>
+          ) : (
+            <div className="admin-items-list">
+              {extras.map((extra) => (
+                <div
+                  key={extra.id}
+                  className="admin-item-row flex items-center justify-between"
+                >
+                  {editingExtra?.id === extra.id ? (
+                    /* Editing extra */
+                    <div className="flex gap-2 items-center flex-1" style={{ flexWrap: 'wrap' }}>
+                      <input
+                        value={editingExtra.name}
+                        onChange={(e) => setEditingExtra({ ...editingExtra, name: e.target.value })}
+                        style={{ flex: 2, minWidth: 120 }}
+                      />
+                      <input
+                        type="number"
+                        value={editingExtra.price}
+                        onChange={(e) => setEditingExtra({ ...editingExtra, price: Number(e.target.value) })}
+                        style={{ width: 80 }}
+                      />
+                      <input
+                        value={editingExtra.group}
+                        onChange={(e) => setEditingExtra({ ...editingExtra, group: e.target.value })}
+                        placeholder="群組"
+                        style={{ width: 100 }}
+                      />
+                      <select
+                        value={editingExtra.type}
+                        onChange={(e) => setEditingExtra({ ...editingExtra, type: e.target.value as 'extra' | 'single' })}
+                        style={{ width: 110 }}
+                      >
+                        <option value="extra">可複選</option>
+                        <option value="single">單選互斥</option>
+                      </select>
+                      <button className="btn btn-ghost" onClick={() => setEditingExtra(null)}>
+                        <X size={14} />
+                      </button>
+                      <button className="btn btn-primary" onClick={handleSaveEditExtra} style={{ padding: '8px 16px' }}>
+                        <Save size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    /* Display extra */
+                    <>
+                      <div className="flex flex-col flex-1" style={{ minWidth: 0 }}>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-base">{extra.name}</span>
+                          <span className="badge badge-accent" style={{ fontSize: 11 }}>
+                            {extra.group || '加點'}
+                          </span>
+                          <span className="badge badge-default" style={{ fontSize: 11 }}>
+                            {extra.type === 'single' ? '單選互斥' : '可複選'}
+                          </span>
+                          {selectedRest === '__ALL__' && (
+                            <span className="badge badge-default" style={{ fontSize: 11 }}>
+                              {getRestName(extra.restaurantId)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="price-display price-sm font-semibold" style={{ color: 'var(--primary)', marginRight: 12 }}>
+                        +${extra.price}
+                      </span>
+                      <div className="flex gap-1">
+                        <button
+                          className="btn btn-ghost btn-icon"
+                          onClick={() => setEditingExtra({
+                            id: extra.id,
+                            name: extra.name,
+                            price: extra.price,
+                            group: extra.group,
+                            type: extra.type,
+                          })}
+                          title="編輯"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-icon"
+                          onClick={() => handleDeleteExtra(extra.id, extra.name)}
+                          title="刪除"
+                          style={{ color: 'var(--error)' }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Items list */
+        <div className="card">
+          <div className="flex justify-between items-center mb-3">
+            <div className="h3">品項列表</div>
+            <span className="caption">{items.length} 項</span>
+          </div>
+
+          {items.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">📋</div>
+              <div className="empty-state-title">沒有品項</div>
+              <div className="empty-state-desc">選擇餐廳並新增品項</div>
+            </div>
+          ) : (
+            <div className="admin-items-list">
             {items.map((item, idx) => (
               <div
                 key={`${item.restaurantId}-${item.id}-${item.name}-${idx}`}
@@ -507,6 +786,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
           </div>
         )}
       </div>
+      )}
 
       {/* Delete confirmation */}
       {confirmDelete && (

@@ -61,6 +61,12 @@ function normalizeName(name: string): string {
     .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) =>
       String.fromCharCode(s.charCodeAt(0) - 65248),
     )
+    .replace(/（/g, '(')
+    .replace(/）/g, ')')
+    .replace(/【/g, '[')
+    .replace(/】/g, ']')
+    .replace(/，/g, ',')
+    .replace(/：/g, ':')
     .toLowerCase();
 }
 
