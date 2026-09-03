@@ -263,6 +263,30 @@ input, select, textarea {
   outline: none;
 }
 
+select {
+  color-scheme: dark;
+  background-color: var(--bg-tertiary);
+  cursor: pointer;
+}
+
+select option {
+  background-color: #1a1e28 !important;
+  color: #f1f5f9 !important;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+[data-theme='light'] select {
+  color-scheme: light;
+  background-color: #ffffff;
+  color: #1a1e28;
+}
+
+[data-theme='light'] select option {
+  background-color: #ffffff !important;
+  color: #1a1e28 !important;
+}
+
 input::placeholder, textarea::placeholder {
   color: var(--text-muted);
 }
@@ -509,7 +533,16 @@ input:disabled, select:disabled {
   transition: all 0.2s var(--ease-smooth);
 }
 
-.badge-default { background: var(--surface-active); color: var(--text-secondary); }
+.badge-default {
+  background: rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+[data-theme='light'] .badge-default {
+  background: #e2e8f0;
+  color: #1e293b;
+  border: 1px solid #cbd5e1;
+}
 .badge-primary { background: var(--primary-muted); color: var(--primary); }
 .badge-success { background: var(--success-muted); color: var(--success); }
 .badge-error { background: var(--error-muted); color: var(--error); }

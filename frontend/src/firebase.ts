@@ -5,12 +5,12 @@ import { getAuth, connectAuthEmulator } from 'firebase/auth';
 
 // 真實的 Firebase 專案配置 (lunch-order-system-af806)
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyBsmoABWfttnWnwMI2TV53_LMPchmuKB84',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'lunch-order-system-af806.firebaseapp.com',
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'lunch-order-system-af806',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'lunch-order-system-af806.firebasestorage.app',
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '847905518519',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:847905518519:web:8e2ce77203203d5dc8ee32',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];

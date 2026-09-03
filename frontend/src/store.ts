@@ -128,7 +128,9 @@ interface AppState {
   checkUserRole: (emp: string) => Promise<void>;
   loadAdminData: () => Promise<void>;
   adminAddItem: (data: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
-  adminAddRestaurant: (data: { name: string; category: string; telephone?: string }) => Promise<{ ok: boolean; error?: string }>;
+  adminAddRestaurant: (data: { name: string; category: string; telephone?: string }) => Promise<{ ok: boolean; restaurantId?: string; error?: string }>;
+  adminUpdateRestaurant: (data: { restaurantId: string; name?: string; category?: string; telephone?: string }) => Promise<{ ok: boolean; error?: string }>;
+  adminToggleRestaurantActive: (restaurantId: string, isActive: boolean) => Promise<{ ok: boolean; error?: string }>;
   adminUpdateItem: (data: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
   adminDeactivateItem: (restaurantId: string, itemId: string) => Promise<{ ok: boolean; error?: string }>;
   adminReactivateItem: (restaurantId: string, itemId: string) => Promise<{ ok: boolean; error?: string }>;
@@ -942,7 +944,37 @@ export const useStore = create<AppState>((set, get) => {
       set({ adminLoading: true });
       try {
         const fn = httpsCallable(functions, 'addRestaurant');
+        const res: any = await fn({ ...data, adminName: get().selectedEmployee });
+        set({ adminLoading: false });
+        await get().loadAdminData();
+        await get().init(get().date);
+        return { ok: true, restaurantId: res.data?.restaurantId };
+      } catch (e: any) {
+        set({ adminLoading: false });
+        return { ok: false, error: e.message };
+      }
+    },
+
+    adminUpdateRestaurant: async (data) => {
+      set({ adminLoading: true });
+      try {
+        const fn = httpsCallable(functions, 'updateRestaurant');
         await fn({ ...data, adminName: get().selectedEmployee });
+        set({ adminLoading: false });
+        await get().loadAdminData();
+        await get().init(get().date);
+        return { ok: true };
+      } catch (e: any) {
+        set({ adminLoading: false });
+        return { ok: false, error: e.message };
+      }
+    },
+
+    adminToggleRestaurantActive: async (restaurantId, isActive) => {
+      set({ adminLoading: true });
+      try {
+        const fn = httpsCallable(functions, 'toggleRestaurantActive');
+        await fn({ restaurantId, isActive, adminName: get().selectedEmployee });
         set({ adminLoading: false });
         await get().loadAdminData();
         await get().init(get().date);

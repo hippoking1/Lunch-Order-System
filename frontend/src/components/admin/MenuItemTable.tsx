@@ -15,7 +15,7 @@ interface EditingItem {
   flavors: string;
 }
 
-export default function MenuItemTable() {
+export default function MenuItemTable({ initialRestaurantId }: { initialRestaurantId?: string } = {}) {
   const menuPayload = useStore((s) => s.menuPayload);
   const adminAddItem = useStore((s) => s.adminAddItem);
   const adminUpdateItem = useStore((s) => s.adminUpdateItem);
@@ -29,7 +29,7 @@ export default function MenuItemTable() {
   const [newRest, setNewRest] = useState({ name: '', category: '正餐' as string, telephone: '' });
 
   const [search, setSearch] = useState('');
-  const [selectedRest, setSelectedRest] = useState('__ALL__');
+  const [selectedRest, setSelectedRest] = useState(initialRestaurantId || '__ALL__');
   const [editing, setEditing] = useState<EditingItem | null>(null);
   const [adding, setAdding] = useState(false);
   const [newItem, setNewItem] = useState({
@@ -243,6 +243,17 @@ export default function MenuItemTable() {
                 if (result.ok) {
                   addToast('success', `已新增餐廳「${newRest.name.trim()}」`);
                   setAddingRest(false);
+                  if (result.restaurantId) {
+                    setSelectedRest(result.restaurantId);
+                    setAdding(true);
+                    setNewItem({
+                      itemName: '',
+                      price: '',
+                      category: newRest.category,
+                      subCategory: '',
+                      flavors: '',
+                    });
+                  }
                   setNewRest({ name: '', category: '正餐', telephone: '' });
                 } else {
                   addToast('error', result.error || '新增失敗');

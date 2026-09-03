@@ -6,18 +6,21 @@ import TextMenuImporter from './TextMenuImporter';
 import MenuItemTable from './MenuItemTable';
 import SpecialPricePanel from './SpecialPricePanel';
 import LimitedItemPanel from './LimitedItemPanel';
+import RestaurantManager from './RestaurantManager';
 
-type AdminTab = 'import' | 'items' | 'special' | 'limited';
+type AdminTab = 'restaurants' | 'items' | 'import' | 'special' | 'limited';
 
 const ADMIN_TABS: { key: AdminTab; label: string; emoji: string }[] = [
-  { key: 'import', label: '文字匯入', emoji: '📝' },
+  { key: 'restaurants', label: '餐廳管理', emoji: '🏪' },
   { key: 'items', label: '品項管理', emoji: '📊' },
+  { key: 'import', label: '文字匯入', emoji: '📝' },
   { key: 'special', label: '特價管理', emoji: '💰' },
   { key: 'limited', label: '限定商品', emoji: '🌸' },
 ];
 
 export default function AdminPanel() {
-  const [subTab, setSubTab] = useState<AdminTab>('import');
+  const [subTab, setSubTab] = useState<AdminTab>('restaurants');
+  const [targetRestaurantId, setTargetRestaurantId] = useState<string>('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
@@ -209,8 +212,20 @@ export default function AdminPanel() {
 
       {!adminLoading && (
         <div className="admin-content animate-slide-up">
-          {subTab === 'import' && <TextMenuImporter />}
-          {subTab === 'items' && <MenuItemTable />}
+          {subTab === 'restaurants' && (
+            <RestaurantManager
+              onNavigateToImport={(restId) => {
+                setTargetRestaurantId(restId);
+                setSubTab('import');
+              }}
+              onNavigateToItems={(restId) => {
+                setTargetRestaurantId(restId);
+                setSubTab('items');
+              }}
+            />
+          )}
+          {subTab === 'items' && <MenuItemTable initialRestaurantId={targetRestaurantId} key={targetRestaurantId} />}
+          {subTab === 'import' && <TextMenuImporter initialRestaurantId={targetRestaurantId} key={targetRestaurantId} />}
           {subTab === 'special' && <SpecialPricePanel />}
           {subTab === 'limited' && <LimitedItemPanel />}
         </div>

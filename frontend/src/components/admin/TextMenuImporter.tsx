@@ -165,9 +165,9 @@ RestaurantID,ItemID,PortionName,Price
 4,1007,杯,65
 4,1007,瓶,205`;
 
-export default function TextMenuImporter() {
+export default function TextMenuImporter({ initialRestaurantId }: { initialRestaurantId?: string } = {}) {
   const [text, setText] = useState('');
-  const [selectedRestaurant, setSelectedRestaurant] = useState('__NONE__');
+  const [selectedRestaurant, setSelectedRestaurant] = useState(initialRestaurantId || '__NONE__');
   const [parsedItems, setParsedItems] = useState<ParsedMenuItem[]>([]);
   const [checkedItems, setCheckedItems] = useState<Set<number>>(new Set());
   const menuPayload = useStore((s) => s.menuPayload);

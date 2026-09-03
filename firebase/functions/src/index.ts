@@ -1,5 +1,5 @@
-﻿import * as admin from 'firebase-admin';
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import * as admin from 'firebase-admin';
+import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 
 admin.initializeApp();
@@ -161,13 +161,33 @@ export const addRestaurant = onCall({ region: 'asia-east1', cors: true }, async 
   const data = request.data;
   const restId = 'REST_' + Date.now();
   await db.collection('restaurants').doc(restId).set({
-    name: data.name || '',
+    name: String(data.name || '').trim(),
     category: data.category || '正餐',
-    telephone: data.telephone || '',
+    telephone: String(data.telephone || '').trim(),
     isActive: true,
     createdAt: new Date().toISOString()
   });
   return { success: true, restaurantId: restId };
+});
+
+export const updateRestaurant = onCall({ region: 'asia-east1', cors: true }, async (request) => {
+  await assertAdmin(request);
+  const { restaurantId, name, category, telephone } = request.data;
+  if (!restaurantId) throw new HttpsError('invalid-argument', '未指定餐廳 ID');
+  const updateData: any = {};
+  if (name !== undefined) updateData.name = String(name).trim();
+  if (category !== undefined) updateData.category = category;
+  if (telephone !== undefined) updateData.telephone = String(telephone).trim();
+  await db.collection('restaurants').doc(restaurantId).update(updateData);
+  return { success: true };
+});
+
+export const toggleRestaurantActive = onCall({ region: 'asia-east1', cors: true }, async (request) => {
+  await assertAdmin(request);
+  const { restaurantId, isActive } = request.data;
+  if (!restaurantId) throw new HttpsError('invalid-argument', '未指定餐廳 ID');
+  await db.collection('restaurants').doc(restaurantId).update({ isActive: Boolean(isActive) });
+  return { success: true };
 });
 
 export const addMenuItem = onCall({ region: 'asia-east1', cors: true }, async (request) => {
@@ -239,4 +259,36 @@ export const scheduledExpireLimitedItems = onSchedule({
   region: 'asia-east1'
 }, async () => {
   await expireLimitedItemsTask();
+});
+
+// ── 一次性資料庫修正：將搬遷之既存餐廳與品項設為歷史時間 ──────
+export const resetExistingTimestampsToLegacy = onRequest({ region: 'asia-east1', cors: true }, async (req, res) => {
+  const pastDate = '2026-01-01T00:00:00.000Z';
+
+  // 1. restaurants
+  const restSnap = await db.collection('restaurants').get();
+  const restBatch = db.batch();
+  restSnap.docs.forEach((doc) => {
+    restBatch.update(doc.ref, { createdAt: pastDate });
+  });
+  await restBatch.commit();
+
+  // 2. menuItems
+  const menuSnap = await db.collection('menuItems').get();
+  const chunkSize = 400;
+  for (let i = 0; i < menuSnap.docs.length; i += chunkSize) {
+    const chunk = menuSnap.docs.slice(i, i + chunkSize);
+    const menuBatch = db.batch();
+    chunk.forEach((doc) => {
+      menuBatch.update(doc.ref, { createdAt: pastDate });
+    });
+    await menuBatch.commit();
+  }
+
+  res.json({
+    success: true,
+    message: '已成功將所有既存餐廳與餐點建立時間設為歷史時間！',
+    restaurants: restSnap.size,
+    menuItems: menuSnap.size
+  });
 });
