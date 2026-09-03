@@ -70,6 +70,11 @@ function normalizeName(name: string): string {
     .toLowerCase();
 }
 
+function getBaseItemName(name: string): string {
+  if (!name) return '';
+  return name.replace(/[（(].*?[）)]/g, '').trim();
+}
+
 export function parseMenuText(
   text: string,
   existingItems: MenuItem[],
@@ -82,10 +87,13 @@ export function parseMenuText(
 
   // Build existing items map for matching
   const existingMap = new Map<string, MenuItem>();
+  const existingBaseMap = new Map<string, MenuItem>();
   existingItems
     .filter((i) => i.restaurantId === restaurantId)
     .forEach((item) => {
       existingMap.set(normalizeName(item.name), item);
+      const base = getBaseItemName(item.name);
+      if (base) existingBaseMap.set(normalizeName(base), item);
     });
 
   for (const rawLine of lines) {
@@ -143,8 +151,12 @@ export function parseMenuText(
       );
       if (nameMatch) {
         const name = nameMatch[1].trim();
-        const existing = existingMap.get(normalizeName(name));
+        const existing =
+          existingMap.get(normalizeName(name)) ||
+          existingBaseMap.get(normalizeName(getBaseItemName(name)));
         results.push({
+          itemId: existing?.id,
+          matchedItemId: existing?.id,
           name,
           price: portions[0].price,
           category: currentCategory,
@@ -156,7 +168,6 @@ export function parseMenuText(
               : existing
                 ? 'update'
                 : 'add',
-          matchedItemId: existing?.id,
         });
         continue;
       }
@@ -176,7 +187,9 @@ export function parseMenuText(
       name = name.replace(/[\s\-_]+$/, '').replace(/^[\s\-_]+/, '');
       if (name.length < 1 || name.length > 30) continue;
 
-      const existing = existingMap.get(normalizeName(name));
+      const existing =
+        existingMap.get(normalizeName(name)) ||
+        existingBaseMap.get(normalizeName(getBaseItemName(name)));
 
       let changeType: ParsedMenuItem['changeType'] = 'add';
       if (currentSection === 'remove') {
@@ -184,10 +197,15 @@ export function parseMenuText(
       } else if (currentSection === 'sale') {
         changeType = 'sale';
       } else if (existing) {
-        changeType = existing.price !== price ? 'update' : 'add';
+        changeType =
+          existing.price !== price || existing.name.trim() !== name.trim()
+            ? 'update'
+            : 'unchanged';
       }
 
       results.push({
+        itemId: existing?.id,
+        matchedItemId: existing?.id,
         name,
         price,
         category: currentCategory,
@@ -195,7 +213,6 @@ export function parseMenuText(
         portions: [],
         changeType,
         oldPrice: existing?.price,
-        matchedItemId: existing?.id,
         saleLabel: currentSection === 'sale' ? '特價' : undefined,
       });
     } else if (currentSection === 'remove') {

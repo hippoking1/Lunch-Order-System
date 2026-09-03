@@ -32,6 +32,11 @@ function normalizeName(name: string): string {
     .toLowerCase();
 }
 
+function getBaseItemName(name: string): string {
+  if (!name) return '';
+  return name.replace(/[（(].*?[）)]/g, '').trim();
+}
+
 function parseCsvLine(line: string): string[] {
   const result: string[] = [];
   let current = '';
@@ -145,12 +150,18 @@ export function parseCsvMenuText(
     portionsByItemKey.get(key)!.push({ name: p.portionName, price: p.price });
   }
 
-  // Create lookup map: 核心改造 - 名稱優先 (normalizedName)
+  // Create lookup map: 核心改造 - 名稱優先 (normalizedName) 及 基礎品名 (baseName 去除括號)
   const existingByKey = new Map<string, MenuItem>();
   const existingByNameKey = new Map<string, MenuItem>();
+  const existingByBaseNameKey = new Map<string, MenuItem>();
+
   for (const item of existingItems) {
     existingByKey.set(`${item.restaurantId}_${item.id}`, item);
     existingByNameKey.set(`${item.restaurantId}_${normalizeName(item.name)}`, item);
+    const base = getBaseItemName(item.name);
+    if (base) {
+      existingByBaseNameKey.set(`${item.restaurantId}_${normalizeName(base)}`, item);
+    }
   }
 
   const results: ParsedMenuItem[] = [];
@@ -167,9 +178,17 @@ export function parseCsvMenuText(
 
     const key = `${row.restaurantId}_${row.itemId}`;
     const nameKey = `${row.restaurantId}_${normalizeName(row.itemName)}`;
+    const baseName = getBaseItemName(row.itemName);
+    const baseKey = `${row.restaurantId}_${normalizeName(baseName)}`;
 
-    // 核心改造：優先以品項名稱比對，避免 OCR 自動生成 ID 與手動 ID 不符產生誤判
-    const existing = existingByNameKey.get(nameKey) || existingByKey.get(key);
+    // 核心比對：
+    // 1. 完全相同名稱優先
+    // 2. 去除括號後的品名相同（品名後 () 內如有不同，認列為同一品項的更新！）
+    // 3. ID 相同比對
+    const existing =
+      existingByNameKey.get(nameKey) ||
+      existingByBaseNameKey.get(baseKey) ||
+      existingByKey.get(key);
 
     const portions = portionsByItemKey.get(key) || [];
 

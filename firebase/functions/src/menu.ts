@@ -1,6 +1,6 @@
 import * as admin from 'firebase-admin';
 import { HttpsError } from 'firebase-functions/v2/https';
-import { normalizeName } from './shared/normalize';
+import { normalizeName, getBaseItemName } from './shared/normalize';
 import { MenuItemDoc, Portion, SpecialPriceDoc } from './shared/types';
 
 const db = admin.firestore();
@@ -120,14 +120,33 @@ export async function getActiveSpecialPricesInternal(): Promise<SpecialPriceDoc[
 
 export async function findMenuItemByName(restaurantId: string, itemName: string) {
   const normalized = normalizeName(itemName);
+  // 1. 完全一致的正規化名稱比對
   const snap = await db.collection('menuItems')
     .where('restaurantId', '==', restaurantId)
     .where('normalizedName', '==', normalized)
     .limit(1)
     .get();
 
-  if (snap.empty) return null;
-  return snap.docs[0];
+  if (!snap.empty) return snap.docs[0];
+
+  // 2. 核心名稱比對：品名後 () 內如有不同，視為同一品項
+  const targetBase = normalizeName(getBaseItemName(itemName));
+  if (!targetBase) return null;
+
+  const allItemsSnap = await db.collection('menuItems')
+    .where('restaurantId', '==', restaurantId)
+    .where('isActive', '==', true)
+    .get();
+
+  for (const doc of allItemsSnap.docs) {
+    const existingName = doc.data().itemName || '';
+    const existingBase = normalizeName(getBaseItemName(existingName));
+    if (existingBase === targetBase) {
+      return doc;
+    }
+  }
+
+  return null;
 }
 
 export async function addOrUpdateMenuItemInternal(data: any) {
@@ -256,6 +275,8 @@ export async function applyMenuChangesInternal(restaurantId: string, changes: an
       if (targetDoc) {
         // 現有品項更新：直接 update 現有 doc，絕不新建重複文件！
         const updatePayload: any = {
+          itemName,
+          normalizedName: normalizeName(itemName),
           price: Number(change.price || 0),
           isActive: true
         };
@@ -280,9 +301,11 @@ export async function applyMenuChangesInternal(restaurantId: string, changes: an
         applied++;
       }
     } else if (change.type === 'add') {
-      // 新增品項：若已有名稱相同品項，自動轉為更新，防止重複添加！
+      // 新增品項：若核心名稱相同已存在，自動轉為更新，防止重複添加！
       if (targetDoc) {
         await targetDoc.ref.update({
+          itemName,
+          normalizedName: normalizeName(itemName),
           price: Number(change.price || 0),
           subCategory: change.subCategory || targetDoc.data()?.subCategory || '',
           isActive: true
@@ -318,7 +341,10 @@ export async function cleanupDuplicateMenuItemsInternal(restaurantId?: string) {
 
   snap.docs.forEach((doc) => {
     const d = doc.data();
-    const key = `${d.restaurantId}_${d.normalizedName || normalizeName(d.itemName)}`;
+    // 依據去除括號後的基礎名稱進行分組，徹底合併紅心芭樂烏龍與紅心芭樂烏龍(最低微冰)等重複項目
+    const baseNorm = normalizeName(getBaseItemName(d.itemName || ''));
+    if (!baseNorm) return;
+    const key = `${d.restaurantId}_${baseNorm}`;
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(doc);
   });
@@ -328,7 +354,20 @@ export async function cleanupDuplicateMenuItemsInternal(restaurantId?: string) {
 
   for (const [, docs] of map.entries()) {
     if (docs.length > 1) {
-      // 保留第一筆，刪除其餘重複的
+      // 排序：優先保留有括號詳細說明、名稱更完整、最新更新的品項
+      docs.sort((a, b) => {
+        const nameA = a.data().itemName || '';
+        const nameB = b.data().itemName || '';
+        const hasParenA = /[（(].*?[）)]/.test(nameA) ? 1 : 0;
+        const hasParenB = /[（(].*?[）)]/.test(nameB) ? 1 : 0;
+        if (hasParenA !== hasParenB) return hasParenB - hasParenA;
+        if (nameB.length !== nameA.length) return nameB.length - nameA.length;
+        const timeA = a.data().createdAt || '';
+        const timeB = b.data().createdAt || '';
+        return timeB.localeCompare(timeA);
+      });
+
+      // 保留 docs[0]，將其餘多餘重複項刪除
       for (let i = 1; i < docs.length; i++) {
         toDelete.push(docs[i].ref);
         deletedCount++;

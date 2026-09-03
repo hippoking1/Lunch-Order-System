@@ -20,3 +20,15 @@ export function normalizeName(name: string): string {
     .replace(/：/g, ':')
     .toLowerCase();
 }
+
+/**
+ * 提取品項核心名稱（去除品名後方或內部的括號 ()、（） 及其說明文字）
+ * 例如：
+ * "紅心芭樂烏龍 (最低微冰)" -> "紅心芭樂烏龍"
+ * "青檸青茶（最低微糖微冰）" -> "青檸青茶"
+ * "玄米蕎麥 (固定無糖)" -> "玄米蕎麥"
+ */
+export function getBaseItemName(name: string): string {
+  if (!name) return '';
+  return name.replace(/[（(].*?[）)]/g, '').trim();
+}
