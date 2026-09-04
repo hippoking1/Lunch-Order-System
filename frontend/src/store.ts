@@ -21,6 +21,7 @@ import type {
   MenuPayload,
   OrderPayload,
   OrderRecord,
+  Restaurant,
   RestaurantTelephone,
 } from './types';
 
@@ -82,6 +83,7 @@ interface AppState {
   adminData: AdminData | null;
   adminLoading: boolean;
   newItemDisplayDays: number;
+  allRestaurants: Restaurant[];
 
   // Actions
   init: (dateStr?: string) => Promise<void>;
@@ -195,6 +197,7 @@ export const useStore = create<AppState>((set, get) => {
     adminData: null,
     adminLoading: false,
     newItemDisplayDays: 7,
+    allRestaurants: [],
     frequentOrders: [],
     frequentOrdersLoading: false,
 
@@ -224,6 +227,7 @@ export const useStore = create<AppState>((set, get) => {
           confirmations: data.confirmations || {},
           locks: locks,
           menuPayload: data.menuPayload,
+          allRestaurants: data.menuPayload?.restaurants || get().allRestaurants,
           newItemDisplayDays: data.menuPayload?.newItemDisplayDays ?? 7,
           selectedCategory: defaultCategory,
           selectedRestaurant: lockedRestId,
@@ -249,11 +253,23 @@ export const useStore = create<AppState>((set, get) => {
         const employees = usersSnap.docs.map((d) => d.id).sort((a, b) => a.localeCompare(b, 'zh-Hant'));
         const telephones: Record<string, RestaurantTelephone> = {};
         const restaurants: any[] = [];
+        const allRests: Restaurant[] = [];
         restSnap.docs.forEach((d) => {
           const dat = d.data();
           telephones[d.id] = { name: dat.name || '', telephone: dat.telephone || '' };
+          const restItem: Restaurant = {
+            id: d.id,
+            name: dat.name || '',
+            category: dat.category || '正餐',
+            telephone: dat.telephone || '',
+            isActive: dat.isActive !== false,
+            sweetnessOptions: dat.sweetnessOptions || null,
+            iceOptions: dat.iceOptions || null,
+            createdAt: dat.createdAt || '',
+          };
+          allRests.push(restItem);
           if (dat.isActive !== false) {
-            restaurants.push({ id: d.id, name: dat.name || '', category: dat.category || '正餐', createdAt: dat.createdAt || '' });
+            restaurants.push(restItem);
           }
         });
 
@@ -353,6 +369,7 @@ export const useStore = create<AppState>((set, get) => {
           summary,
           confirmations,
           locks,
+          allRestaurants: allRests,
           menuPayload: {
             restaurants,
             items,
@@ -922,9 +939,34 @@ export const useStore = create<AppState>((set, get) => {
     loadAdminData: async () => {
       set({ adminLoading: true });
       try {
+        let allRests: Restaurant[] = [];
+        try {
+          const { collection, getDocs } = await import('firebase/firestore');
+          const restSnap = await getDocs(collection(db, 'restaurants'));
+          allRests = restSnap.docs.map((d) => {
+            const dat = d.data();
+            return {
+              id: d.id,
+              name: dat.name || '',
+              category: dat.category || '正餐',
+              telephone: dat.telephone || '',
+              isActive: dat.isActive !== false,
+              sweetnessOptions: dat.sweetnessOptions || null,
+              iceOptions: dat.iceOptions || null,
+              createdAt: dat.createdAt || '',
+            };
+          });
+        } catch (err) {
+          console.warn('Direct restaurant fetch in loadAdminData failed:', err);
+        }
+
         const fn = httpsCallable(functions, 'getAdminData');
         const res: any = await fn({ adminName: get().selectedEmployee });
-        set({ adminData: res.data, adminLoading: false });
+        set({
+          adminData: res.data,
+          allRestaurants: allRests.length > 0 ? allRests : (res.data?.menuPayload?.restaurants || get().allRestaurants),
+          adminLoading: false,
+        });
       } catch (e) {
         set({ adminLoading: false });
       }
@@ -980,7 +1022,12 @@ export const useStore = create<AppState>((set, get) => {
       try {
         const fn = httpsCallable(functions, 'toggleRestaurantActive');
         await fn({ restaurantId, isActive, adminName: get().selectedEmployee });
-        set({ adminLoading: false });
+        set((state) => ({
+          allRestaurants: state.allRestaurants.map((r) =>
+            r.id === restaurantId ? { ...r, isActive } : r
+          ),
+          adminLoading: false,
+        }));
         await get().loadAdminData();
         await get().init(get().date);
         return { ok: true };

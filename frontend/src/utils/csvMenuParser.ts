@@ -140,14 +140,26 @@ export function parseCsvMenuText(
     }
   }
 
-  // Group portions by restaurantId + itemId
+  const hasSelectedRest =
+    Boolean(selectedRestaurantId &&
+    selectedRestaurantId !== '__ALL__' &&
+    selectedRestaurantId !== '__NONE__');
+
+  // Group portions by itemId (優先直接以 itemId 關聯，徹底免去手動維護超長隨機 RestaurantID)
   const portionsByItemKey = new Map<string, Portion[]>();
   for (const p of csvPortionRows) {
-    const key = `${p.restaurantId}_${p.itemId}`;
-    if (!portionsByItemKey.has(key)) {
-      portionsByItemKey.set(key, []);
+    const itemOnlyKey = p.itemId;
+    const fullKey = `${p.restaurantId}_${p.itemId}`;
+    
+    if (!portionsByItemKey.has(itemOnlyKey)) {
+      portionsByItemKey.set(itemOnlyKey, []);
     }
-    portionsByItemKey.get(key)!.push({ name: p.portionName, price: p.price });
+    portionsByItemKey.get(itemOnlyKey)!.push({ name: p.portionName, price: p.price });
+
+    if (!portionsByItemKey.has(fullKey)) {
+      portionsByItemKey.set(fullKey, []);
+    }
+    portionsByItemKey.get(fullKey)!.push({ name: p.portionName, price: p.price });
   }
 
   // Create lookup map: 核心改造 - 名稱優先 (normalizedName) 及 基礎品名 (baseName 去除括號)
@@ -167,19 +179,13 @@ export function parseCsvMenuText(
   const results: ParsedMenuItem[] = [];
 
   for (const row of csvItemRows) {
-    if (
-      selectedRestaurantId &&
-      selectedRestaurantId !== '__ALL__' &&
-      selectedRestaurantId !== '__NONE__' &&
-      row.restaurantId !== selectedRestaurantId
-    ) {
-      // Skip items not in selected restaurant
-    }
+    // 智慧綁定目標餐廳：若外部已選定目標餐廳，一律以選定餐廳 ID 為準
+    const targetRestId = hasSelectedRest ? (selectedRestaurantId as string) : row.restaurantId;
 
-    const key = `${row.restaurantId}_${row.itemId}`;
-    const nameKey = `${row.restaurantId}_${normalizeName(row.itemName)}`;
+    const key = `${targetRestId}_${row.itemId}`;
+    const nameKey = `${targetRestId}_${normalizeName(row.itemName)}`;
     const baseName = getBaseItemName(row.itemName);
-    const baseKey = `${row.restaurantId}_${normalizeName(baseName)}`;
+    const baseKey = `${targetRestId}_${normalizeName(baseName)}`;
 
     // 核心比對：
     // 1. 完全相同名稱優先
@@ -190,13 +196,14 @@ export function parseCsvMenuText(
       existingByBaseNameKey.get(baseKey) ||
       existingByKey.get(key);
 
-    const portions = portionsByItemKey.get(key) || [];
+    // 優先以純 itemId 取得關聯份量，fallback 至 fullKey
+    const portions = portionsByItemKey.get(row.itemId) || portionsByItemKey.get(key) || [];
 
     if (!existing) {
       // ADD (真正的新增品項)
       results.push({
         itemId: row.itemId,
-        restaurantId: row.restaurantId,
+        restaurantId: targetRestId,
         name: row.itemName,
         price: row.price,
         category: '飲料',

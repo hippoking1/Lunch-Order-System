@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { FileText, Check, X, Zap, AlertTriangle, Sparkles, RefreshCw } from 'lucide-react';
+import { FileText, Check, X, Zap, AlertTriangle, Sparkles, RefreshCw, Copy } from 'lucide-react';
 import classNames from 'classnames';
 import { useStore } from '../../store';
 import { useToast } from '../../hooks/useToast';
@@ -171,11 +171,54 @@ export default function TextMenuImporter({ initialRestaurantId }: { initialResta
   const [parsedItems, setParsedItems] = useState<ParsedMenuItem[]>([]);
   const [checkedItems, setCheckedItems] = useState<Set<number>>(new Set());
   const menuPayload = useStore((s) => s.menuPayload);
+  const allRestaurants = useStore((s) => s.allRestaurants);
   const adminApplyChanges = useStore((s) => s.adminApplyChanges);
   const adminCleanupDuplicates = useStore((s) => s.adminCleanupDuplicates);
   const addToast = useToast((s) => s.addToast);
   const [cleaning, setCleaning] = useState(false);
   const [showUnchanged, setShowUnchanged] = useState(false);
+
+  const restaurants = useMemo(
+    () => (allRestaurants && allRestaurants.length > 0 ? allRestaurants : (menuPayload?.restaurants || [])),
+    [allRestaurants, menuPayload],
+  );
+
+  const handleCopyGemPrompt = () => {
+    const selectedObj = restaurants.find((r) => r.id === selectedRestaurant);
+    const restName = selectedObj ? selectedObj.name : '此餐廳';
+    const promptText = `角色任務：
+你是一位精準的資料處理專家，專精於 OCR 文字提取與結構化資料轉換。請分析這張菜單照片，並將其轉換為適合「${restName}」匯入系統的 CSV 資料表格。
+
+具體指令與欄位需求：
+
+第一部分：請輸出 MenuItems 表格（CSV 格式）
+欄位依序為：
+RestaurantID,ItemID,SubCategory,ItemName,Flavors,Price
+- RestaurantID：直接填入 1 即可（系統匯入時會自動對齊${restName}，無需手動修改）
+- ItemID：請依照 SubCategory 類別從 101, 102... 201, 202... 依序編號
+- SubCategory：菜單上的分類小標題（如：泰式系列、經典茶飲、超值便當）
+- ItemName：餐點名稱
+- Flavors：若有口味選擇請列出，以逗號分隔（如：辣,不辣；若無則留空）
+- Price：若有不同份量，填入「最低」單價；無份量之分則填固定單價
+
+第二部分：請輸出 ItemPortions 表格（CSV 格式）
+注意：僅針對同一個餐點有不同份量（如：大/中/小、瓶裝/杯裝）才填寫此表。
+欄位依序為：
+RestaurantID,ItemID,PortionName,Price
+- RestaurantID：直接填入 1
+- ItemID：必須與上方 MenuItems 對應的 ItemID 完全一致
+- PortionName：份量名稱（如：大、小、杯、瓶）
+- Price：該份量對應的價格
+
+約束條件：
+1. 確保 ItemID 在兩張表中能正確對應，這是我系統份量關聯的關鍵。
+2. 忽略菜單中的裝飾性文字、電話、地址或廣告標語。
+3. 輸出純 CSV 格式，方便我直接複製貼上。
+4. 若圖片文字模糊，請在該欄位標註 [待確認]。`;
+
+    navigator.clipboard.writeText(promptText);
+    addToast('success', `已複製「${restName}」專用 Gem Prompt！直接貼給 Gemini 辨識即可`);
+  };
 
   const handleCleanupDuplicates = async () => {
     setCleaning(true);
@@ -188,11 +231,6 @@ export default function TextMenuImporter({ initialRestaurantId }: { initialResta
       addToast('error', res.error || '清理失敗');
     }
   };
-
-  const restaurants = useMemo(
-    () => menuPayload?.restaurants || [],
-    [menuPayload],
-  );
 
   const handleParse = () => {
     if (!text.trim()) return;
@@ -363,10 +401,21 @@ export default function TextMenuImporter({ initialRestaurantId }: { initialResta
           >
             <Sparkles size={14} /> 帶入老賴 CSV 範例
           </button>
+          <button
+            className="btn btn-outline btn-sm flex items-center gap-1"
+            onClick={handleCopyGemPrompt}
+            title="複製已為此餐廳量身設定的 Gemini Gem 分析 Prompt"
+            style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+          >
+            <Copy size={14} /> 複製 Gem 專用 Prompt
+          </button>
         </div>
-        <p className="caption mb-3">
+        <p className="caption mb-2">
           支援雙表格 CSV 格式 (<code>RestaurantID,ItemID,SubCategory,ItemName,Flavors,Price</code> 及 <code>RestaurantID,ItemID,PortionName,Price</code>)，貼入後系統將自動比對現有菜單並將異動匯入<b>待審變更</b>。
         </p>
+        <div style={{ background: 'rgba(124, 92, 252, 0.08)', border: '1px solid rgba(124, 92, 252, 0.2)', padding: '8px 12px', borderRadius: 8, fontSize: 12, marginBottom: 12, color: 'var(--text-secondary)' }}>
+          💡 <b>智慧解耦提示</b>：只要在下方選單選好目標餐廳，CSV 內的 <code>RestaurantID</code>（無論填 1、30 或任意值）系統皆會<b>自動套用至該餐廳</b>，且份量以 <code>ItemID</code> 自動關聯，完全無需手動修改隨機 ID！
+        </div>
 
         <div
           className="flex gap-3 mb-3 items-center"
@@ -375,12 +424,12 @@ export default function TextMenuImporter({ initialRestaurantId }: { initialResta
           <select
             value={selectedRestaurant}
             onChange={(e) => setSelectedRestaurant(e.target.value)}
-            style={{ maxWidth: 240 }}
+            style={{ maxWidth: 280 }}
           >
             <option value="__NONE__">自動偵測 / 選擇餐廳...</option>
-            {restaurants.map((r) => (
+            {restaurants.map((r, idx) => (
               <option key={r.id} value={r.id}>
-                {r.name} (ID: {r.id})
+                #{idx + 1} {r.name} {(r as any).isActive === false ? '(已下架)' : ''} (ID: {r.id})
               </option>
             ))}
           </select>

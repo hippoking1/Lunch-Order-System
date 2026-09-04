@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Search, Plus, Pencil, Trash2, Save, X, Calendar, Store } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, Save, X, Calendar, Store, Layers, FileText, Loader2 } from 'lucide-react';
 import classNames from 'classnames';
 import { useStore } from '../../store';
 import { useToast } from '../../hooks/useToast';
@@ -17,6 +17,7 @@ interface EditingItem {
 
 export default function MenuItemTable({ initialRestaurantId }: { initialRestaurantId?: string } = {}) {
   const menuPayload = useStore((s) => s.menuPayload);
+  const allRestaurants = useStore((s) => s.allRestaurants);
   const adminAddItem = useStore((s) => s.adminAddItem);
   const adminUpdateItem = useStore((s) => s.adminUpdateItem);
   const adminDeactivateItem = useStore((s) => s.adminDeactivateItem);
@@ -33,24 +34,46 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
 
   const [search, setSearch] = useState('');
   const [selectedRest, setSelectedRest] = useState(initialRestaurantId || '__ALL__');
-  const [itemSection, setItemSection] = useState<'items' | 'extras'>('items');
+  const [itemSection, setItemSection] = useState<'items' | 'combos' | 'extras'>('items');
   const [editing, setEditing] = useState<EditingItem | null>(null);
-  const [adding, setAdding] = useState(false);
-  const [newItem, setNewItem] = useState({
-    itemName: '',
-    price: '',
-    category: '',
-    subCategory: '',
-    flavors: '',
-  });
 
+  // 批量新增品項狀態
+  const [adding, setAdding] = useState(false);
+  const [itemsBatch, setItemsBatch] = useState<Array<{
+    id: string;
+    itemName: string;
+    price: string;
+    category: string;
+    subCategory: string;
+    flavors: string;
+  }>>([{ id: '1', itemName: '', price: '', category: '', subCategory: '', flavors: '' }]);
+  const [itemsPasteMode, setItemsPasteMode] = useState(false);
+  const [itemsPasteText, setItemsPasteText] = useState('');
+  const [savingBatch, setSavingBatch] = useState(false);
+
+  // 批量新增加點狀態
   const [addingExtra, setAddingExtra] = useState(false);
-  const [newExtra, setNewExtra] = useState({
-    name: '',
-    price: '',
-    group: '加料',
-    type: 'extra' as 'extra' | 'single',
-  });
+  const [extrasBatch, setExtrasBatch] = useState<Array<{
+    id: string;
+    name: string;
+    price: string;
+    group: string;
+    type: 'extra' | 'single';
+  }>>([{ id: '1', name: '', price: '', group: '加料', type: 'extra' }]);
+  const [savingExtrasBatch, setSavingExtrasBatch] = useState(false);
+
+  // 批量新增套餐狀態
+  const [addingCombo, setAddingCombo] = useState(false);
+  const [combosBatch, setCombosBatch] = useState<Array<{
+    id: string;
+    name: string;
+    price: string;
+    group: string;
+  }>>([{ id: '1', name: '', price: '', group: '套餐' }]);
+  const [combosPasteMode, setCombosPasteMode] = useState(false);
+  const [combosPasteText, setCombosPasteText] = useState('');
+  const [savingCombosBatch, setSavingCombosBatch] = useState(false);
+
   const [editingExtra, setEditingExtra] = useState<{
     id: string;
     name: string;
@@ -66,9 +89,10 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
   } | null>(null);
 
   const restaurants = useMemo(
-    () => menuPayload?.restaurants || [],
-    [menuPayload],
+    () => (allRestaurants && allRestaurants.length > 0 ? allRestaurants : (menuPayload?.restaurants || [])),
+    [allRestaurants, menuPayload],
   );
+
   const items = useMemo(() => {
     if (!menuPayload) return [];
     let list = menuPayload.items;
@@ -98,21 +122,181 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
     return list;
   }, [allExtras, selectedRest, search]);
 
-  const handleAddExtra = async () => {
-    if (selectedRest === '__ALL__' || !newExtra.name.trim() || !newExtra.price) return;
-    const res = await adminAddExtra({
-      restaurantId: selectedRest,
-      name: newExtra.name.trim(),
-      price: Number(newExtra.price),
-      group: newExtra.group.trim() || '加料',
-      type: newExtra.type,
-    });
-    if (res.ok) {
-      addToast('success', `已新增加點「${newExtra.name.trim()}」`);
-      setAddingExtra(false);
-      setNewExtra({ name: '', price: '', group: '加料', type: 'extra' });
+  // 分離出套餐與常規加料
+  const comboExtras = useMemo(() => {
+    return extras.filter((e) => e.group === '套餐' || e.type === 'single');
+  }, [extras]);
+
+  const regularExtras = useMemo(() => {
+    return extras.filter((e) => e.group !== '套餐' && e.type !== 'single');
+  }, [extras]);
+
+  // 批量儲存品項
+  const handleBatchAddItems = async () => {
+    if (selectedRest === '__ALL__') return;
+    const validRows = itemsBatch.filter((r) => r.itemName.trim() && r.price.trim());
+    if (validRows.length === 0) {
+      addToast('error', '請至少填寫一個品項名稱與價格');
+      return;
+    }
+    setSavingBatch(true);
+    let successCount = 0;
+    for (const r of validRows) {
+      const res = await adminAddItem({
+        restaurantId: selectedRest,
+        itemName: r.itemName.trim(),
+        price: Number(r.price),
+        category: r.category.trim(),
+        subCategory: r.subCategory.trim(),
+        flavors: r.flavors.trim(),
+      });
+      if (res.ok) successCount++;
+    }
+    setSavingBatch(false);
+    if (successCount > 0) {
+      addToast('success', `成功新增 ${successCount} 筆餐點品項！`);
+      setAdding(false);
+      setItemsBatch([{ id: Date.now().toString(), itemName: '', price: '', category: '', subCategory: '', flavors: '' }]);
+      setItemsPasteText('');
+      setItemsPasteMode(false);
     } else {
-      addToast('error', res.error || '新增加點失敗');
+      addToast('error', '新增品項失敗');
+    }
+  };
+
+  // 快速文字貼上解析品項
+  const handleParseItemsPaste = () => {
+    if (!itemsPasteText.trim()) return;
+    const lines = itemsPasteText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const parsedRows: Array<{ id: string; itemName: string; price: string; category: string; subCategory: string; flavors: string }> = [];
+    for (const line of lines) {
+      const parts = line.split(/[,\t]+/).map((s) => s.trim());
+      if (parts.length >= 2) {
+        parsedRows.push({
+          id: Math.random().toString(36).slice(2, 9),
+          itemName: parts[0] || '',
+          price: parts[1] || '',
+          category: parts[2] || '',
+          subCategory: parts[3] || '',
+          flavors: parts[4] || '',
+        });
+      } else {
+        const spaceParts = line.split(/\s+/);
+        if (spaceParts.length >= 2) {
+          parsedRows.push({
+            id: Math.random().toString(36).slice(2, 9),
+            itemName: spaceParts[0] || '',
+            price: spaceParts[1] || '',
+            category: spaceParts[2] || '',
+            subCategory: spaceParts[3] || '',
+            flavors: spaceParts[4] || '',
+          });
+        }
+      }
+    }
+    if (parsedRows.length > 0) {
+      setItemsBatch(parsedRows);
+      setItemsPasteMode(false);
+      addToast('info', `已成功解析並填入 ${parsedRows.length} 筆品項！`);
+    } else {
+      addToast('error', '未能解析出有效品項，格式範例：牛肉麵 120 或 排骨飯,110,正餐');
+    }
+  };
+
+  // 批量儲存加點
+  const handleBatchAddExtras = async () => {
+    if (selectedRest === '__ALL__') return;
+    const validRows = extrasBatch.filter((r) => r.name.trim() && r.price.trim());
+    if (validRows.length === 0) {
+      addToast('error', '請至少填寫一個加點名稱與價格');
+      return;
+    }
+    setSavingExtrasBatch(true);
+    let successCount = 0;
+    for (const r of validRows) {
+      const res = await adminAddExtra({
+        restaurantId: selectedRest,
+        name: r.name.trim(),
+        price: Number(r.price),
+        group: r.group.trim() || '加料',
+        type: r.type,
+      });
+      if (res.ok) successCount++;
+    }
+    setSavingExtrasBatch(false);
+    if (successCount > 0) {
+      addToast('success', `成功新增 ${successCount} 項加點配料！`);
+      setAddingExtra(false);
+      setExtrasBatch([{ id: Date.now().toString(), name: '', price: '', group: '加料', type: 'extra' }]);
+    } else {
+      addToast('error', '新增加點失敗');
+    }
+  };
+
+  // 批量儲存套餐
+  const handleBatchAddCombos = async () => {
+    if (selectedRest === '__ALL__') return;
+    const validRows = combosBatch.filter((r) => r.name.trim() && r.price.trim());
+    if (validRows.length === 0) {
+      addToast('error', '請至少填寫一個套餐名稱與價格');
+      return;
+    }
+    setSavingCombosBatch(true);
+    let successCount = 0;
+    for (const r of validRows) {
+      const res = await adminAddExtra({
+        restaurantId: selectedRest,
+        name: r.name.trim(),
+        price: Number(r.price),
+        group: r.group.trim() || '套餐',
+        type: 'single',
+      });
+      if (res.ok) successCount++;
+    }
+    setSavingCombosBatch(false);
+    if (successCount > 0) {
+      addToast('success', `成功新增 ${successCount} 種套餐選擇！`);
+      setAddingCombo(false);
+      setCombosBatch([{ id: Date.now().toString(), name: '', price: '', group: '套餐' }]);
+      setCombosPasteText('');
+      setCombosPasteMode(false);
+    } else {
+      addToast('error', '新增套餐失敗');
+    }
+  };
+
+  // 快速文字貼上解析套餐
+  const handleParseCombosPaste = () => {
+    if (!combosPasteText.trim()) return;
+    const lines = combosPasteText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const parsedRows: Array<{ id: string; name: string; price: string; group: string }> = [];
+    for (const line of lines) {
+      const parts = line.split(/[,\t]+/).map((s) => s.trim());
+      if (parts.length >= 2) {
+        parsedRows.push({
+          id: Math.random().toString(36).slice(2, 9),
+          name: parts[0],
+          price: parts[1],
+          group: parts[2] || '套餐',
+        });
+      } else {
+        const spaceParts = line.split(/\s+/);
+        if (spaceParts.length >= 2) {
+          parsedRows.push({
+            id: Math.random().toString(36).slice(2, 9),
+            name: spaceParts[0],
+            price: spaceParts[1],
+            group: spaceParts[2] || '套餐',
+          });
+        }
+      }
+    }
+    if (parsedRows.length > 0) {
+      setCombosBatch(parsedRows);
+      setCombosPasteMode(false);
+      addToast('info', `已解析並填入 ${parsedRows.length} 種套餐！`);
+    } else {
+      addToast('error', '未能解析出有效套餐，格式範例：A套餐(附紅茶與薯條) 49');
     }
   };
 
@@ -164,31 +348,6 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
     }
   };
 
-  const handleAdd = async () => {
-    if (selectedRest === '__ALL__' || !newItem.itemName.trim() || !newItem.price) return;
-    const result = await adminAddItem({
-      restaurantId: selectedRest,
-      itemName: newItem.itemName.trim(),
-      price: Number(newItem.price),
-      category: newItem.category,
-      subCategory: newItem.subCategory,
-      flavors: newItem.flavors,
-    });
-    if (result.ok) {
-      addToast('success', '品項已新增');
-      setAdding(false);
-      setNewItem({
-        itemName: '',
-        price: '',
-        category: '',
-        subCategory: '',
-        flavors: '',
-      });
-    } else {
-      addToast('error', result.error || '新增失敗');
-    }
-  };
-
   const handleDeactivate = async () => {
     if (!confirmDelete) return;
     const result = await adminDeactivateItem(
@@ -232,28 +391,45 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          {itemSection === 'items' ? (
-            <button
-              className="btn btn-primary"
-              onClick={() => setAdding(true)}
-              disabled={selectedRest === '__ALL__'}
-            >
-              <Plus size={16} /> 新增品項
-            </button>
-          ) : (
-            <button
-              className="btn btn-primary"
-              onClick={() => setAddingExtra(true)}
-              disabled={selectedRest === '__ALL__'}
-            >
-              <Plus size={16} /> 新增加點配料
-            </button>
-          )}
           <button
-            className="btn btn-outline"
+            className="btn btn-primary btn-sm flex items-center gap-1"
+            onClick={() => {
+              setAdding(true);
+              setAddingCombo(false);
+              setAddingExtra(false);
+            }}
+            disabled={selectedRest === '__ALL__'}
+          >
+            <Plus size={15} /> 新增品項
+          </button>
+          <button
+            className="btn btn-sm flex items-center gap-1"
+            onClick={() => {
+              setAddingCombo(true);
+              setAdding(false);
+              setAddingExtra(false);
+            }}
+            disabled={selectedRest === '__ALL__'}
+            style={{ background: 'var(--accent)', color: '#fff', border: '1px solid var(--accent)' }}
+          >
+            🍱 新增套餐
+          </button>
+          <button
+            className="btn btn-outline btn-sm flex items-center gap-1"
+            onClick={() => {
+              setAddingExtra(true);
+              setAdding(false);
+              setAddingCombo(false);
+            }}
+            disabled={selectedRest === '__ALL__'}
+          >
+            ➕ 新增加點
+          </button>
+          <button
+            className="btn btn-outline btn-sm flex items-center gap-1"
             onClick={() => setAddingRest(true)}
           >
-            <Store size={16} /> 新增餐廳
+            <Store size={15} /> 新增餐廳
           </button>
         </div>
         <div
@@ -337,13 +513,6 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                   if (result.restaurantId) {
                     setSelectedRest(result.restaurantId);
                     setAdding(true);
-                    setNewItem({
-                      itemName: '',
-                      price: '',
-                      category: newRest.category,
-                      subCategory: '',
-                      flavors: '',
-                    });
                   }
                   setNewRest({ name: '', category: '正餐', telephone: '' });
                 } else {
@@ -357,114 +526,431 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
         </div>
       )}
 
-      {/* Add form */}
+      {/* 1. 批量新增品項表單 */}
       {adding && selectedRest !== '__ALL__' && (
-        <div className="card card-section animate-slide-up">
-          <div className="h3 mb-3">
-            新增品項至 {getRestName(selectedRest)}
+        <div className="card card-section animate-slide-up" style={{ border: '1.5px solid var(--primary)' }}>
+          <div className="flex justify-between items-center mb-3">
+            <div className="h3 flex items-center gap-2" style={{ color: 'var(--primary)' }}>
+              <Layers size={18} /> 新增品項至 {getRestName(selectedRest)}（支援一次新增多品項）
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs flex items-center gap-1"
+                onClick={() => setItemsPasteMode(!itemsPasteMode)}
+                style={{ fontSize: 12 }}
+              >
+                <FileText size={13} /> {itemsPasteMode ? '切換表格輸入' : '📝 文字貼上解析'}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setAdding(false)}>
+                <X size={16} />
+              </button>
+            </div>
           </div>
-          <div className="flex gap-3" style={{ flexWrap: 'wrap' }}>
-            <input
-              placeholder="品項名稱"
-              value={newItem.itemName}
-              onChange={(e) =>
-                setNewItem({ ...newItem, itemName: e.target.value })
-              }
-              style={{ flex: 2, minWidth: 150 }}
-            />
-            <input
-              type="number"
-              placeholder="價格"
-              value={newItem.price}
-              onChange={(e) =>
-                setNewItem({ ...newItem, price: e.target.value })
-              }
-              style={{ width: 100 }}
-            />
-            <input
-              placeholder="分類"
-              value={newItem.category}
-              onChange={(e) =>
-                setNewItem({ ...newItem, category: e.target.value })
-              }
-              style={{ width: 120 }}
-            />
-            <input
-              placeholder="子分類"
-              value={newItem.subCategory}
-              onChange={(e) =>
-                setNewItem({ ...newItem, subCategory: e.target.value })
-              }
-              style={{ width: 120 }}
-            />
-          </div>
-          <div className="flex gap-3 mt-3 justify-end">
+
+          {itemsPasteMode ? (
+            <div className="flex flex-col gap-2 mb-3">
+              <p className="caption" style={{ color: 'var(--text-secondary)' }}>
+                每行填寫一個品項，格式支援空格、逗號或 Tab 分隔（例如：<code>招牌排骨飯 110 正餐 便當系列</code>）
+              </p>
+              <textarea
+                rows={5}
+                placeholder={`牛肉麵 120 正餐 麵食\n排骨飯 110 正餐 便當\n貢丸湯 40 湯品`}
+                value={itemsPasteText}
+                onChange={(e) => setItemsPasteText(e.target.value)}
+                style={{ width: '100%', fontFamily: 'monospace', fontSize: 13, padding: 10 }}
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={handleParseItemsPaste}
+                  disabled={!itemsPasteText.trim()}
+                >
+                  解析並填入多列表格
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2 mb-3">
+              <div className="flex gap-2 font-semibold caption px-1" style={{ color: 'var(--text-muted)' }}>
+                <div style={{ flex: 2, minWidth: 140 }}>品項名稱 *</div>
+                <div style={{ width: 90 }}>價格 *</div>
+                <div style={{ width: 110 }}>分類</div>
+                <div style={{ width: 110 }}>子分類</div>
+                <div style={{ width: 110 }}>口味 (選填)</div>
+                <div style={{ width: 36 }}></div>
+              </div>
+              {itemsBatch.map((row, idx) => (
+                <div key={row.id} className="flex gap-2 items-center">
+                  <input
+                    placeholder="品項名稱"
+                    value={row.itemName}
+                    onChange={(e) => {
+                      const next = [...itemsBatch];
+                      next[idx].itemName = e.target.value;
+                      setItemsBatch(next);
+                    }}
+                    style={{ flex: 2, minWidth: 140 }}
+                  />
+                  <input
+                    type="number"
+                    placeholder="價格"
+                    value={row.price}
+                    onChange={(e) => {
+                      const next = [...itemsBatch];
+                      next[idx].price = e.target.value;
+                      setItemsBatch(next);
+                    }}
+                    style={{ width: 90 }}
+                  />
+                  <input
+                    placeholder="分類 (例: 正餐)"
+                    value={row.category}
+                    onChange={(e) => {
+                      const next = [...itemsBatch];
+                      next[idx].category = e.target.value;
+                      setItemsBatch(next);
+                    }}
+                    style={{ width: 110 }}
+                  />
+                  <input
+                    placeholder="子分類"
+                    value={row.subCategory}
+                    onChange={(e) => {
+                      const next = [...itemsBatch];
+                      next[idx].subCategory = e.target.value;
+                      setItemsBatch(next);
+                    }}
+                    style={{ width: 110 }}
+                  />
+                  <input
+                    placeholder="口味 (辣,不辣)"
+                    value={row.flavors}
+                    onChange={(e) => {
+                      const next = [...itemsBatch];
+                      next[idx].flavors = e.target.value;
+                      setItemsBatch(next);
+                    }}
+                    style={{ width: 110 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-icon"
+                    disabled={itemsBatch.length === 1}
+                    onClick={() => {
+                      if (itemsBatch.length > 1) {
+                        setItemsBatch(itemsBatch.filter((_, i) => i !== idx));
+                      }
+                    }}
+                    style={{ width: 36, opacity: itemsBatch.length === 1 ? 0.3 : 1 }}
+                    title="刪除此行"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              ))}
+              <div className="flex justify-start mt-1">
+                <button
+                  type="button"
+                  className="btn btn-outline btn-xs flex items-center gap-1"
+                  onClick={() =>
+                    setItemsBatch([
+                      ...itemsBatch,
+                      {
+                        id: Math.random().toString(36).slice(2, 9),
+                        itemName: '',
+                        price: '',
+                        category: itemsBatch[itemsBatch.length - 1]?.category || '',
+                        subCategory: itemsBatch[itemsBatch.length - 1]?.subCategory || '',
+                        flavors: '',
+                      },
+                    ])
+                  }
+                >
+                  <Plus size={13} /> 再增一行
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-3 mt-4 justify-end" style={{ borderTop: '1px solid var(--glass-border)', paddingTop: 12 }}>
             <button className="btn btn-ghost" onClick={() => setAdding(false)}>
               取消
             </button>
             <button
-              className="btn btn-primary"
-              onClick={handleAdd}
-              disabled={!newItem.itemName.trim() || !newItem.price}
+              className="btn btn-primary flex items-center gap-2"
+              onClick={handleBatchAddItems}
+              disabled={savingBatch || itemsBatch.every((r) => !r.itemName.trim() || !r.price.trim())}
             >
-              <Save size={16} /> 儲存
+              {savingBatch ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              批次儲存全部品項 ({itemsBatch.filter((r) => r.itemName.trim() && r.price.trim()).length} 項)
             </button>
           </div>
         </div>
       )}
 
-      {/* Add Extra form */}
-      {addingExtra && selectedRest !== '__ALL__' && (
+      {/* 2. 批量新增套餐表單 */}
+      {addingCombo && selectedRest !== '__ALL__' && (
         <div className="card card-section animate-slide-up" style={{ border: '1.5px solid var(--accent)' }}>
-          <div className="h3 mb-3 flex items-center gap-2" style={{ color: 'var(--accent)' }}>
-            <Plus size={18} /> 新增加點 / 配料項目
+          <div className="flex justify-between items-center mb-3">
+            <div className="h3 flex items-center gap-2" style={{ color: 'var(--accent)' }}>
+              🍱 新增套餐選項至 {getRestName(selectedRest)}（支援一次新增多種套餐）
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs flex items-center gap-1"
+                onClick={() => setCombosPasteMode(!combosPasteMode)}
+                style={{ fontSize: 12 }}
+              >
+                <FileText size={13} /> {combosPasteMode ? '切換表格輸入' : '📝 文字貼上解析'}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setAddingCombo(false)}>
+                <X size={16} />
+              </button>
+            </div>
           </div>
-          <div className="flex gap-3" style={{ flexWrap: 'wrap' }}>
-            <input
-              placeholder="加點名稱 (例：加珍珠、加蛋、微辣)"
-              value={newExtra.name}
-              onChange={(e) => setNewExtra({ ...newExtra, name: e.target.value })}
-              style={{ flex: 2, minWidth: 150 }}
-              autoFocus
-            />
-            <input
-              type="number"
-              placeholder="加購價 (元)"
-              value={newExtra.price}
-              onChange={(e) => setNewExtra({ ...newExtra, price: e.target.value })}
-              style={{ width: 100 }}
-            />
-            <input
-              placeholder="群組 (例：加料、辣度、升級)"
-              value={newExtra.group}
-              onChange={(e) => setNewExtra({ ...newExtra, group: e.target.value })}
-              style={{ width: 140 }}
-            />
-            <select
-              value={newExtra.type}
-              onChange={(e) => setNewExtra({ ...newExtra, type: e.target.value as 'extra' | 'single' })}
-              style={{ width: 140 }}
+
+          {combosPasteMode ? (
+            <div className="flex flex-col gap-2 mb-3">
+              <p className="caption" style={{ color: 'var(--text-secondary)' }}>
+                每行填寫一種套餐，格式支援空格、逗號（例如：<code>A套餐(附紅茶與薯條) 49</code> 或 <code>超值特餐,69,升級套餐</code>）
+              </p>
+              <textarea
+                rows={5}
+                placeholder={`A套餐 (薯條+紅茶) 49\nB套餐 (雞塊+奶茶) 69\nC套餐 (沙拉+濃湯) 59`}
+                value={combosPasteText}
+                onChange={(e) => setCombosPasteText(e.target.value)}
+                style={{ width: '100%', fontFamily: 'monospace', fontSize: 13, padding: 10 }}
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={handleParseCombosPaste}
+                  disabled={!combosPasteText.trim()}
+                >
+                  解析並填入多列表格
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2 mb-3">
+              <div className="flex gap-2 font-semibold caption px-1" style={{ color: 'var(--text-muted)' }}>
+                <div style={{ flex: 3, minWidth: 160 }}>套餐名稱 (例：A套餐 薯條+大可) *</div>
+                <div style={{ width: 120 }}>加購價 (元) *</div>
+                <div style={{ flex: 2, minWidth: 120 }}>群組名稱 (預設: 套餐)</div>
+                <div style={{ width: 36 }}></div>
+              </div>
+              {combosBatch.map((row, idx) => (
+                <div key={row.id} className="flex gap-2 items-center">
+                  <input
+                    placeholder="套餐名稱 (例：A套餐: 薯條+紅茶)"
+                    value={row.name}
+                    onChange={(e) => {
+                      const next = [...combosBatch];
+                      next[idx].name = e.target.value;
+                      setCombosBatch(next);
+                    }}
+                    style={{ flex: 3, minWidth: 160 }}
+                  />
+                  <input
+                    type="number"
+                    placeholder="加價 (元)"
+                    value={row.price}
+                    onChange={(e) => {
+                      const next = [...combosBatch];
+                      next[idx].price = e.target.value;
+                      setCombosBatch(next);
+                    }}
+                    style={{ width: 120 }}
+                  />
+                  <input
+                    placeholder="群組 (例: 套餐)"
+                    value={row.group}
+                    onChange={(e) => {
+                      const next = [...combosBatch];
+                      next[idx].group = e.target.value;
+                      setCombosBatch(next);
+                    }}
+                    style={{ flex: 2, minWidth: 120 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-icon"
+                    disabled={combosBatch.length === 1}
+                    onClick={() => {
+                      if (combosBatch.length > 1) {
+                        setCombosBatch(combosBatch.filter((_, i) => i !== idx));
+                      }
+                    }}
+                    style={{ width: 36, opacity: combosBatch.length === 1 ? 0.3 : 1 }}
+                    title="刪除此行"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              ))}
+              <div className="flex justify-start mt-1">
+                <button
+                  type="button"
+                  className="btn btn-outline btn-xs flex items-center gap-1"
+                  onClick={() =>
+                    setCombosBatch([
+                      ...combosBatch,
+                      {
+                        id: Math.random().toString(36).slice(2, 9),
+                        name: '',
+                        price: '',
+                        group: combosBatch[combosBatch.length - 1]?.group || '套餐',
+                      },
+                    ])
+                  }
+                >
+                  <Plus size={13} /> 再增一種套餐
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-3 mt-4 justify-end" style={{ borderTop: '1px solid var(--glass-border)', paddingTop: 12 }}>
+            <button className="btn btn-ghost" onClick={() => setAddingCombo(false)}>
+              取消
+            </button>
+            <button
+              className="btn flex items-center gap-2"
+              onClick={handleBatchAddCombos}
+              disabled={savingCombosBatch || combosBatch.every((r) => !r.name.trim() || !r.price.trim())}
+              style={{ background: 'var(--accent)', color: '#fff', border: '1px solid var(--accent)' }}
             >
-              <option value="extra">可複選 (加料)</option>
-              <option value="single">單選互斥 (規格)</option>
-            </select>
+              {savingCombosBatch ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              批次儲存全部套餐 ({combosBatch.filter((r) => r.name.trim() && r.price.trim()).length} 種)
+            </button>
           </div>
-          <div className="flex gap-3 mt-3 justify-end">
+        </div>
+      )}
+
+      {/* 3. 批量新增加點配料表單 */}
+      {addingExtra && selectedRest !== '__ALL__' && (
+        <div className="card card-section animate-slide-up" style={{ border: '1.5px solid var(--success)' }}>
+          <div className="flex justify-between items-center mb-3">
+            <div className="h3 flex items-center gap-2" style={{ color: 'var(--success)' }}>
+              ➕ 新增加點 / 配料至 {getRestName(selectedRest)}（支援一次新增多項）
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setAddingExtra(false)}>
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-2 mb-3">
+            <div className="flex gap-2 font-semibold caption px-1" style={{ color: 'var(--text-muted)' }}>
+              <div style={{ flex: 3, minWidth: 150 }}>加點名稱 (例：加珍珠、加蛋) *</div>
+              <div style={{ width: 100 }}>加購價 (元) *</div>
+              <div style={{ width: 120 }}>群組 (例: 加料)</div>
+              <div style={{ width: 120 }}>類型</div>
+              <div style={{ width: 36 }}></div>
+            </div>
+            {extrasBatch.map((row, idx) => (
+              <div key={row.id} className="flex gap-2 items-center">
+                <input
+                  placeholder="加點名稱 (例：加珍珠、加蛋)"
+                  value={row.name}
+                  onChange={(e) => {
+                    const next = [...extrasBatch];
+                    next[idx].name = e.target.value;
+                    setExtrasBatch(next);
+                  }}
+                  style={{ flex: 3, minWidth: 150 }}
+                />
+                <input
+                  type="number"
+                  placeholder="加購價"
+                  value={row.price}
+                  onChange={(e) => {
+                    const next = [...extrasBatch];
+                    next[idx].price = e.target.value;
+                    setExtrasBatch(next);
+                  }}
+                  style={{ width: 100 }}
+                />
+                <input
+                  placeholder="群組"
+                  value={row.group}
+                  onChange={(e) => {
+                    const next = [...extrasBatch];
+                    next[idx].group = e.target.value;
+                    setExtrasBatch(next);
+                  }}
+                  style={{ width: 120 }}
+                />
+                <select
+                  value={row.type}
+                  onChange={(e) => {
+                    const next = [...extrasBatch];
+                    next[idx].type = e.target.value as 'extra' | 'single';
+                    setExtrasBatch(next);
+                  }}
+                  style={{ width: 120 }}
+                >
+                  <option value="extra">可複選 (加料)</option>
+                  <option value="single">單選互斥 (規格)</option>
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-icon"
+                  disabled={extrasBatch.length === 1}
+                  onClick={() => {
+                    if (extrasBatch.length > 1) {
+                      setExtrasBatch(extrasBatch.filter((_, i) => i !== idx));
+                    }
+                  }}
+                  style={{ width: 36, opacity: extrasBatch.length === 1 ? 0.3 : 1 }}
+                  title="刪除此行"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            ))}
+            <div className="flex justify-start mt-1">
+              <button
+                type="button"
+                className="btn btn-outline btn-xs flex items-center gap-1"
+                onClick={() =>
+                  setExtrasBatch([
+                    ...extrasBatch,
+                    {
+                      id: Math.random().toString(36).slice(2, 9),
+                      name: '',
+                      price: '',
+                      group: extrasBatch[extrasBatch.length - 1]?.group || '加料',
+                      type: 'extra',
+                    },
+                  ])
+                }
+              >
+                <Plus size={13} /> 再增一項加點
+              </button>
+            </div>
+          </div>
+
+          <div className="flex gap-3 mt-4 justify-end" style={{ borderTop: '1px solid var(--glass-border)', paddingTop: 12 }}>
             <button className="btn btn-ghost" onClick={() => setAddingExtra(false)}>
               取消
             </button>
             <button
-              className="btn btn-primary"
-              onClick={handleAddExtra}
-              disabled={!newExtra.name.trim() || !newExtra.price}
+              className="btn btn-primary flex items-center gap-2"
+              onClick={handleBatchAddExtras}
+              disabled={savingExtrasBatch || extrasBatch.every((r) => !r.name.trim() || !r.price.trim())}
             >
-              <Save size={16} /> 儲存加點
+              {savingExtrasBatch ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              批次儲存全部加點 ({extrasBatch.filter((r) => r.name.trim() && r.price.trim()).length} 項)
             </button>
           </div>
         </div>
       )}
 
-      {/* Section switcher */}
+      {/* Section switcher - 三大標籤 */}
       <div className="flex gap-2 mb-1">
         <button
           type="button"
@@ -480,35 +966,52 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
         <button
           type="button"
           className={classNames('btn btn-sm', {
+            'btn-primary': itemSection === 'combos',
+            'btn-ghost': itemSection !== 'combos',
+          })}
+          onClick={() => setItemSection('combos')}
+          style={{
+            fontSize: 13,
+            padding: '6px 14px',
+            background: itemSection === 'combos' ? 'var(--accent)' : 'transparent',
+            borderColor: itemSection === 'combos' ? 'var(--accent)' : 'transparent',
+            color: itemSection === 'combos' ? '#fff' : 'inherit',
+          }}
+        >
+          🍱 套餐選擇 ({comboExtras.length})
+        </button>
+        <button
+          type="button"
+          className={classNames('btn btn-sm', {
             'btn-primary': itemSection === 'extras',
             'btn-ghost': itemSection !== 'extras',
           })}
           onClick={() => setItemSection('extras')}
           style={{ fontSize: 13, padding: '6px 14px' }}
         >
-          ➕ 加點 / 配料項目 ({extras.length})
+          ➕ 加點 / 配料項目 ({regularExtras.length})
         </button>
       </div>
 
       {/* Main List Section */}
-      {itemSection === 'extras' ? (
+      {itemSection === 'combos' ? (
         <div className="card">
           <div className="flex justify-between items-center mb-3">
-            <div className="h3">加點配料清單</div>
-            <span className="caption">{extras.length} 項</span>
+            <div className="h3">🍱 套餐選擇清單</div>
+            <span className="caption">{comboExtras.length} 項</span>
           </div>
 
-          {extras.length === 0 ? (
+          {comboExtras.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state-icon">➕</div>
-              <div className="empty-state-title">尚未有加點項目</div>
+              <div className="empty-state-icon">🍱</div>
+              <div className="empty-state-title">尚未有套餐項目</div>
               <div className="empty-state-desc">
-                {selectedRest === '__ALL__' ? '請先選擇指定餐廳再新增加點項目' : '點擊上方按鈕為此餐廳新增加點項目'}
+                {selectedRest === '__ALL__' ? '請先選擇指定餐廳再新增套餐項目' : '點擊上方【🍱 新增套餐】為此餐廳新增套餐'}
               </div>
             </div>
           ) : (
             <div className="admin-items-list">
-              {extras.map((extra) => (
+              {comboExtras.map((extra) => (
                 <div
                   key={extra.id}
                   className="admin-item-row flex items-center justify-between"
@@ -538,7 +1041,116 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                         onChange={(e) => setEditingExtra({ ...editingExtra, type: e.target.value as 'extra' | 'single' })}
                         style={{ width: 110 }}
                       >
-                        <option value="extra">可複選</option>
+                        <option value="single">單選互斥 (套餐)</option>
+                        <option value="extra">可複選 (加料)</option>
+                      </select>
+                      <button className="btn btn-ghost" onClick={() => setEditingExtra(null)}>
+                        <X size={14} />
+                      </button>
+                      <button className="btn btn-primary" onClick={handleSaveEditExtra} style={{ padding: '8px 16px' }}>
+                        <Save size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    /* Display combo extra */
+                    <>
+                      <div className="flex flex-col flex-1" style={{ minWidth: 0 }}>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-base">{extra.name}</span>
+                          <span className="badge" style={{ fontSize: 11, background: 'rgba(124, 92, 252, 0.2)', color: 'var(--accent)' }}>
+                            {extra.group || '套餐'}
+                          </span>
+                          <span className="badge badge-default" style={{ fontSize: 11 }}>
+                            單選互斥
+                          </span>
+                          {selectedRest === '__ALL__' && (
+                            <span className="badge badge-default" style={{ fontSize: 11 }}>
+                              {getRestName(extra.restaurantId)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="price-display price-sm font-semibold" style={{ color: 'var(--accent)', marginRight: 12 }}>
+                        +${extra.price}
+                      </span>
+                      <div className="flex gap-1">
+                        <button
+                          className="btn btn-ghost btn-icon"
+                          onClick={() => setEditingExtra({
+                            id: extra.id,
+                            name: extra.name,
+                            price: extra.price,
+                            group: extra.group,
+                            type: extra.type,
+                          })}
+                          title="編輯"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-icon"
+                          onClick={() => handleDeleteExtra(extra.id, extra.name)}
+                          title="刪除"
+                          style={{ color: 'var(--error)' }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : itemSection === 'extras' ? (
+        <div className="card">
+          <div className="flex justify-between items-center mb-3">
+            <div className="h3">➕ 加點配料清單</div>
+            <span className="caption">{regularExtras.length} 項</span>
+          </div>
+
+          {regularExtras.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">➕</div>
+              <div className="empty-state-title">尚未有加點項目</div>
+              <div className="empty-state-desc">
+                {selectedRest === '__ALL__' ? '請先選擇指定餐廳再新增加點項目' : '點擊上方按鈕為此餐廳新增加點項目'}
+              </div>
+            </div>
+          ) : (
+            <div className="admin-items-list">
+              {regularExtras.map((extra) => (
+                <div
+                  key={extra.id}
+                  className="admin-item-row flex items-center justify-between"
+                >
+                  {editingExtra?.id === extra.id ? (
+                    /* Editing extra */
+                    <div className="flex gap-2 items-center flex-1" style={{ flexWrap: 'wrap' }}>
+                      <input
+                        value={editingExtra.name}
+                        onChange={(e) => setEditingExtra({ ...editingExtra, name: e.target.value })}
+                        style={{ flex: 2, minWidth: 120 }}
+                      />
+                      <input
+                        type="number"
+                        value={editingExtra.price}
+                        onChange={(e) => setEditingExtra({ ...editingExtra, price: Number(e.target.value) })}
+                        style={{ width: 80 }}
+                      />
+                      <input
+                        value={editingExtra.group}
+                        onChange={(e) => setEditingExtra({ ...editingExtra, group: e.target.value })}
+                        placeholder="群組"
+                        style={{ width: 100 }}
+                      />
+                      <select
+                        value={editingExtra.type}
+                        onChange={(e) => setEditingExtra({ ...editingExtra, type: e.target.value as 'extra' | 'single' })}
+                        style={{ width: 110 }}
+                      >
+                        <option value="extra">可複選 (加料)</option>
                         <option value="single">單選互斥</option>
                       </select>
                       <button className="btn btn-ghost" onClick={() => setEditingExtra(null)}>
@@ -786,7 +1398,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
           </div>
         )}
       </div>
-      )}
+    )}
 
       {/* Delete confirmation */}
       {confirmDelete && (
