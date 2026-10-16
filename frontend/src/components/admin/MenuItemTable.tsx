@@ -76,6 +76,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
 
   const [editingExtra, setEditingExtra] = useState<{
     id: string;
+    restaurantId: string;
     name: string;
     price: number;
     group: string;
@@ -304,6 +305,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
     if (!editingExtra || !editingExtra.name.trim()) return;
     const res = await adminUpdateExtra({
       id: editingExtra.id,
+      restaurantId: editingExtra.restaurantId,
       name: editingExtra.name.trim(),
       price: Number(editingExtra.price),
       group: editingExtra.group.trim(),
@@ -317,8 +319,8 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
     }
   };
 
-  const handleDeleteExtra = async (id: string, name: string) => {
-    const res = await adminDeleteExtra(id);
+  const handleDeleteExtra = async (id: string, name: string, restaurantId?: string) => {
+    const res = await adminDeleteExtra(id, restaurantId);
     if (res.ok) {
       addToast('success', `已刪除加點「${name}」`);
     } else {
@@ -1078,6 +1080,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                           className="btn btn-ghost btn-icon"
                           onClick={() => setEditingExtra({
                             id: extra.id,
+                            restaurantId: extra.restaurantId,
                             name: extra.name,
                             price: extra.price,
                             group: extra.group,
@@ -1089,7 +1092,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                         </button>
                         <button
                           className="btn btn-ghost btn-icon"
-                          onClick={() => handleDeleteExtra(extra.id, extra.name)}
+                          onClick={() => handleDeleteExtra(extra.id, extra.name, extra.restaurantId)}
                           title="刪除"
                           style={{ color: 'var(--error)' }}
                         >
@@ -1187,6 +1190,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                           className="btn btn-ghost btn-icon"
                           onClick={() => setEditingExtra({
                             id: extra.id,
+                            restaurantId: extra.restaurantId,
                             name: extra.name,
                             price: extra.price,
                             group: extra.group,
@@ -1198,7 +1202,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                         </button>
                         <button
                           className="btn btn-ghost btn-icon"
-                          onClick={() => handleDeleteExtra(extra.id, extra.name)}
+                          onClick={() => handleDeleteExtra(extra.id, extra.name, extra.restaurantId)}
                           title="刪除"
                           style={{ color: 'var(--error)' }}
                         >

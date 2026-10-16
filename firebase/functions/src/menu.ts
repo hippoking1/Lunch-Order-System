@@ -150,12 +150,23 @@ export async function findMenuItemByName(restaurantId: string, itemName: string)
 }
 
 export async function addOrUpdateMenuItemInternal(data: any) {
-  const restaurantId = String(data.restaurantId || '').trim();
-  const itemName = String(data.itemName || '').trim();
+  let docId = data.itemId ? String(data.itemId).trim() : '';
+  let existingDoc: admin.firestore.DocumentSnapshot | null = null;
+  if (docId) {
+    const byId = await db.collection('menuItems').doc(docId).get();
+    if (byId.exists) {
+      existingDoc = byId;
+    }
+  }
+
+  const restaurantId = String(data.restaurantId || existingDoc?.data()?.restaurantId || '').trim();
+  const itemName = String(data.itemName || existingDoc?.data()?.itemName || '').trim();
   if (!restaurantId || !itemName) throw new HttpsError('invalid-argument', '缺少餐廳或品項名稱');
 
   const normalized = normalizeName(itemName);
-  const existing = await findMenuItemByName(restaurantId, itemName);
+  if (!existingDoc) {
+    existingDoc = await findMenuItemByName(restaurantId, itemName);
+  }
 
   const payload: Partial<MenuItemDoc> = {
     restaurantId,
@@ -175,10 +186,9 @@ export async function addOrUpdateMenuItemInternal(data: any) {
     endDate: data.endDate || '',
   };
 
-  let docId = '';
-  if (existing) {
-    docId = existing.id;
-    await existing.ref.update(payload);
+  if (existingDoc) {
+    docId = existingDoc.id;
+    await existingDoc.ref.update(payload);
   } else {
     payload.createdAt = new Date().toISOString();
     payload.legacyItemId = data.itemId || '';
@@ -213,12 +223,12 @@ export async function addOrUpdateMenuItemInternal(data: any) {
   return { success: true, itemId: docId };
 }
 
-export async function deactivateMenuItemInternal(restaurantId: string, itemIdOrName: string) {
+export async function deactivateMenuItemInternal(restaurantId: string | undefined, itemIdOrName: string) {
   let docRef: admin.firestore.DocumentReference | null = null;
   const byId = await db.collection('menuItems').doc(itemIdOrName).get();
-  if (byId.exists && byId.data()?.restaurantId === restaurantId) {
+  if (byId.exists && (!restaurantId || byId.data()?.restaurantId === restaurantId)) {
     docRef = byId.ref;
-  } else {
+  } else if (restaurantId) {
     const existing = await findMenuItemByName(restaurantId, itemIdOrName);
     if (existing) docRef = existing.ref;
   }
@@ -228,12 +238,12 @@ export async function deactivateMenuItemInternal(restaurantId: string, itemIdOrN
   return { success: true };
 }
 
-export async function reactivateMenuItemInternal(restaurantId: string, itemIdOrName: string) {
+export async function reactivateMenuItemInternal(restaurantId: string | undefined, itemIdOrName: string) {
   let docRef: admin.firestore.DocumentReference | null = null;
   const byId = await db.collection('menuItems').doc(itemIdOrName).get();
-  if (byId.exists && byId.data()?.restaurantId === restaurantId) {
+  if (byId.exists && (!restaurantId || byId.data()?.restaurantId === restaurantId)) {
     docRef = byId.ref;
-  } else {
+  } else if (restaurantId) {
     const existing = await findMenuItemByName(restaurantId, itemIdOrName);
     if (existing) docRef = existing.ref;
   }

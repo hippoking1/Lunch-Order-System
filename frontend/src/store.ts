@@ -144,8 +144,8 @@ interface AppState {
   adminRemoveSpecialPrice: (restaurantId: string, itemId: string, portionName: string) => Promise<{ ok: boolean; error?: string }>;
   adminUpdateNewItemDisplayDays: (days: number) => Promise<{ ok: boolean; error?: string }>;
   adminAddExtra: (data: { restaurantId: string; name: string; price: number; group?: string; type?: 'extra' | 'single' }) => Promise<{ ok: boolean; error?: string }>;
-  adminUpdateExtra: (data: { id: string; name?: string; price?: number; group?: string; type?: 'extra' | 'single' }) => Promise<{ ok: boolean; error?: string }>;
-  adminDeleteExtra: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  adminUpdateExtra: (data: { id: string; restaurantId?: string; name?: string; price?: number; group?: string; type?: 'extra' | 'single' }) => Promise<{ ok: boolean; error?: string }>;
+  adminDeleteExtra: (id: string, restaurantId?: string) => Promise<{ ok: boolean; error?: string }>;
   adminUpdateRestaurantCustomOptions: (data: { restaurantId: string; sweetnessOptions?: string[]; iceOptions?: string[] }) => Promise<{ ok: boolean; error?: string }>;
   adminCleanupDuplicates: (restaurantId?: string) => Promise<{ ok: boolean; deletedCount?: number; error?: string }>;
 }
@@ -1210,6 +1210,7 @@ export const useStore = create<AppState>((set, get) => {
       try {
         const fn = httpsCallable(functions, 'updateMenuItem');
         await fn({
+          restaurantId: data.restaurantId,
           itemId: data.id,
           itemName: data.name,
           price: data.price,
@@ -1223,23 +1224,55 @@ export const useStore = create<AppState>((set, get) => {
         await get().init(get().date);
         return { ok: true };
       } catch (e: any) {
-        set({ adminLoading: false });
-        return { ok: false, error: e.message };
+        // Fallback: 直接更新 Firestore 集合
+        try {
+          const { doc, updateDoc } = await import('firebase/firestore');
+          const ref = doc(db, 'menuItems', data.id);
+          const updatePayload: Record<string, any> = {};
+          if (data.restaurantId) updatePayload.restaurantId = data.restaurantId;
+          if (data.name) {
+            updatePayload.itemName = data.name;
+            updatePayload.normalizedName = data.name.trim().toLowerCase();
+          }
+          if (data.price !== undefined) updatePayload.price = Number(data.price);
+          if (data.group !== undefined) updatePayload.extraGroup = data.group;
+          if (data.type) updatePayload.extraType = data.type;
+
+          await updateDoc(ref, updatePayload);
+          set({ adminLoading: false });
+          await get().loadAdminData();
+          await get().init(get().date);
+          return { ok: true };
+        } catch (fallbackErr: any) {
+          set({ adminLoading: false });
+          return { ok: false, error: e.message || fallbackErr.message };
+        }
       }
     },
 
-    adminDeleteExtra: async (id) => {
+    adminDeleteExtra: async (id, restaurantId) => {
       set({ adminLoading: true });
       try {
         const fn = httpsCallable(functions, 'deactivateMenuItem');
-        await fn({ itemId: id, adminName: get().selectedEmployee });
+        await fn({ restaurantId, itemId: id, adminName: get().selectedEmployee });
         set({ adminLoading: false });
         await get().loadAdminData();
         await get().init(get().date);
         return { ok: true };
       } catch (e: any) {
-        set({ adminLoading: false });
-        return { ok: false, error: e.message };
+        // Fallback: 直接在 Firestore 標記停用
+        try {
+          const { doc, updateDoc } = await import('firebase/firestore');
+          const ref = doc(db, 'menuItems', id);
+          await updateDoc(ref, { isActive: false });
+          set({ adminLoading: false });
+          await get().loadAdminData();
+          await get().init(get().date);
+          return { ok: true };
+        } catch (fallbackErr: any) {
+          set({ adminLoading: false });
+          return { ok: false, error: e.message || fallbackErr.message };
+        }
       }
     },
 
