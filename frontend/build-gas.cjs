@@ -4,16 +4,27 @@ const fs = require('fs');
 const htmlContent = fs.readFileSync('dist/index.html', 'utf8');
 
 // 2. Extract CSS code
-const cssMatch = htmlContent.match(/<style\b[^>]*>([\s\S]*?)<\/style>/i);
-const cssCode = cssMatch ? cssMatch[1] : '';
+let cssCode = '';
+const cssLinkMatch = htmlContent.match(/<link[^>]*rel=["']stylesheet["'][^>]*href=["']\.\/(assets\/[^"']+\.css)["']/i);
+if (cssLinkMatch && fs.existsSync(`dist/${cssLinkMatch[1]}`)) {
+  cssCode = fs.readFileSync(`dist/${cssLinkMatch[1]}`, 'utf8');
+} else {
+  const cssMatch = htmlContent.match(/<style\b[^>]*>([\s\S]*?)<\/style>/i);
+  cssCode = cssMatch ? cssMatch[1] : '';
+}
 
-// 3. Extract JS code (find the largest script tag which is the compiled React app)
-const scriptRe = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+// 3. Extract JS code (find compiled React app bundle)
 let jsCode = '';
-let match;
-while ((match = scriptRe.exec(htmlContent)) !== null) {
-  if (match[1].length > jsCode.length) {
-    jsCode = match[1];
+const scriptSrcMatch = htmlContent.match(/<script[^>]*src=["']\.\/(assets\/[^"']+\.js)["']/i);
+if (scriptSrcMatch && fs.existsSync(`dist/${scriptSrcMatch[1]}`)) {
+  jsCode = fs.readFileSync(`dist/${scriptSrcMatch[1]}`, 'utf8');
+} else {
+  const scriptRe = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+  let match;
+  while ((match = scriptRe.exec(htmlContent)) !== null) {
+    if (match[1].length > jsCode.length) {
+      jsCode = match[1];
+    }
   }
 }
 

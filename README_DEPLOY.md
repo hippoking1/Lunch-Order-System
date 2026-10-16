@@ -34,6 +34,8 @@
 2. 進入 **「登入方式 (Sign-in method)」**：
    - 啟用 **Google**：設定專案公開名稱與支援 Email。
    - 啟用 **電子郵件/密碼**：開啟「電子郵件/密碼」。
+3. 進入 **「設定 (Settings)」>「已授權的網域 (Authorized domains)」**：
+   - ⚠️ **極為重要**：請點擊「新增網域」，將 GitHub Pages 網域（例如 `hippoking1.github.io`）或自訂網域名稱加入授權清單。若未加入，使用 Google 登入時彈窗會直接被拒絕並報錯 `auth/popup-closed-by-user`。
 
 ### 步驟 1.4：取得網頁設定參數 (Web Config)
 1. 進入 **專案設定 (Project settings)** > **一般 (General)**。

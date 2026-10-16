@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import classNames from 'classnames';
-import { Loader2, LogIn, LogOut, ShieldCheck, Mail, Lock } from 'lucide-react';
+import { Loader2, LogIn, LogOut, ShieldCheck, Mail, Lock, ExternalLink } from 'lucide-react';
 import { useStore } from '../../store';
 import TextMenuImporter from './TextMenuImporter';
 import MenuItemTable from './MenuItemTable';
@@ -25,11 +25,13 @@ export default function AdminPanel() {
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [submittingAuth, setSubmittingAuth] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
 
   const adminUser = useStore((s) => s.adminUser);
   const loadAdminData = useStore((s) => s.loadAdminData);
   const adminLoading = useStore((s) => s.adminLoading);
   const loginWithGoogle = useStore((s) => s.loginWithGoogle);
+  const loginWithGoogleRedirect = useStore((s) => s.loginWithGoogleRedirect);
   const loginWithEmail = useStore((s) => s.loginWithEmail);
   const logoutAdmin = useStore((s) => s.logoutAdmin);
 
@@ -39,7 +41,7 @@ export default function AdminPanel() {
     }
   }, [adminUser, loadAdminData]);
 
-  // 處理 Google 登入
+  // 處理 Google 彈窗登入
   const handleGoogleLogin = async () => {
     setAuthError('');
     setSubmittingAuth(true);
@@ -47,6 +49,18 @@ export default function AdminPanel() {
     setSubmittingAuth(false);
     if (!res.ok) {
       setAuthError(res.error || 'Google 登入失敗');
+    }
+  };
+
+  // 處理 Google 重新導向登入 (免開彈窗，解決跨網域、第三方 Cookie 與手機彈窗問題)
+  const handleGoogleRedirectLogin = async () => {
+    setAuthError('');
+    setRedirecting(true);
+    try {
+      await loginWithGoogleRedirect();
+    } catch (err: any) {
+      setRedirecting(false);
+      setAuthError(err.message || '重新導向登入失敗');
     }
   };
 
@@ -87,16 +101,29 @@ export default function AdminPanel() {
             </div>
           )}
 
-          {/* Google 登入 */}
+          {/* Google 彈窗登入 */}
           <button
             type="button"
-            className="btn btn-outline w-full flex items-center justify-center gap-2 mb-4"
+            className="btn btn-outline w-full flex items-center justify-center gap-2 mb-2"
             onClick={handleGoogleLogin}
-            disabled={submittingAuth}
+            disabled={submittingAuth || redirecting}
             style={{ padding: '12px 16px', fontWeight: 600 }}
           >
             {submittingAuth ? <Loader2 size={18} className="animate-spin" /> : <LogIn size={18} />}
             使用 Google 帳號一鍵登入
+          </button>
+
+          {/* Google 重新導向登入 (免彈窗備案，適合手機或受限制瀏覽器) */}
+          <button
+            type="button"
+            className="btn btn-ghost w-full flex items-center justify-center gap-2 mb-4"
+            onClick={handleGoogleRedirectLogin}
+            disabled={submittingAuth || redirecting}
+            style={{ fontSize: 13, padding: '7px 12px', opacity: 0.85, border: '1px dashed var(--glass-border)' }}
+            title="若彈窗被瀏覽器封鎖或自動關閉，可使用此按鈕進行全頁跳轉驗證"
+          >
+            {redirecting ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
+            改用網頁重新導向登入 (免開彈窗)
           </button>
 
           <div className="flex items-center gap-2 mb-4" style={{ color: 'var(--text-secondary)', fontSize: 12 }}>

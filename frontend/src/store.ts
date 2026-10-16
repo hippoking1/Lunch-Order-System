@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { httpsCallable } from 'firebase/functions';
 import {
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   signInWithEmailAndPassword,
   signOut,
@@ -124,8 +126,9 @@ interface AppState {
   unlockCategory: (category: string) => Promise<{ ok: boolean; error?: string }>;
 
   // Admin & Auth actions
-  loginWithGoogle: () => Promise<{ ok: boolean; error?: string }>;
-  loginWithEmail: (email: string, pass: string) => Promise<{ ok: boolean; error?: string }>;
+  loginWithGoogle: () => Promise<{ ok: boolean; error?: string; code?: string }>;
+  loginWithGoogleRedirect: () => Promise<void>;
+  loginWithEmail: (email: string, pass: string) => Promise<{ ok: boolean; error?: string; code?: string }>;
   logoutAdmin: () => Promise<void>;
   checkUserRole: (emp: string) => Promise<void>;
   loadAdminData: () => Promise<void>;
@@ -157,6 +160,17 @@ export const useStore = create<AppState>((set, get) => {
       set({ userRole: 'admin' });
     }
   });
+
+  // 監聽 Redirect 登入結果 (若有使用 signInWithRedirect)
+  getRedirectResult(auth)
+    .then((res) => {
+      if (res?.user) {
+        set({ adminUser: res.user, userRole: 'admin' });
+      }
+    })
+    .catch((err) => {
+      console.warn('[Auth] getRedirectResult failed:', err);
+    });
 
   return {
     initialized: false,
@@ -899,12 +913,29 @@ export const useStore = create<AppState>((set, get) => {
     loginWithGoogle: async () => {
       try {
         const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
         const res = await signInWithPopup(auth, provider);
         set({ adminUser: res.user, userRole: 'admin' });
         return { ok: true };
       } catch (err: any) {
-        return { ok: false, error: err.message };
+        let msg = err.message || 'Google 登入失敗';
+        if (err.code === 'auth/popup-closed-by-user') {
+          msg = '登入視窗已關閉或取消。若非您主動關閉，可能是瀏覽器阻擋了彈窗或第三方 Cookie，建議點擊下方「改用網頁重新導向登入」或使用 Email 登入。';
+        } else if (err.code === 'auth/popup-blocked') {
+          msg = '瀏覽器封鎖了彈出式登入視窗，請允許本網站的彈出視窗，或點擊下方「改用網頁重新導向登入」。';
+        } else if (err.code === 'auth/unauthorized-domain') {
+          msg = '當前網址未加入 Firebase 授權網域 (Authorized Domains)！請至 Firebase Console > Authentication > Settings 新增。';
+        } else if (err.code === 'auth/cancelled-popup-request') {
+          msg = '已開啟新的登入請求，前一個視窗已關閉。';
+        }
+        return { ok: false, error: msg, code: err.code };
       }
+    },
+
+    loginWithGoogleRedirect: async () => {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      await signInWithRedirect(auth, provider);
     },
 
     loginWithEmail: async (email: string, pass: string) => {
@@ -913,7 +944,19 @@ export const useStore = create<AppState>((set, get) => {
         set({ adminUser: res.user, userRole: 'admin' });
         return { ok: true };
       } catch (err: any) {
-        return { ok: false, error: err.message };
+        let msg = err.message || '登入失敗';
+        if (
+          err.code === 'auth/invalid-credential' ||
+          err.code === 'auth/wrong-password' ||
+          err.code === 'auth/user-not-found'
+        ) {
+          msg = '管理員帳號或密碼錯誤，請確認後重試。';
+        } else if (err.code === 'auth/invalid-email') {
+          msg = 'Email 格式不正確。';
+        } else if (err.code === 'auth/user-disabled') {
+          msg = '此管理員帳號已被停用。';
+        }
+        return { ok: false, error: msg, code: err.code };
       }
     },
 
