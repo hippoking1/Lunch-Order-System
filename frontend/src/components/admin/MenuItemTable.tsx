@@ -142,13 +142,17 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
     }
     setSavingBatch(true);
     let successCount = 0;
+    const defaultRestCat = restaurants.find((rest) => rest.id === selectedRest)?.category || '正餐';
     for (const r of validRows) {
+      const subCat = r.subCategory.trim();
+      const isSubDrink = /^(飲料|飲品)$/.test(subCat);
+      const itemCat = r.category.trim() || (defaultRestCat === '飲料' || isSubDrink ? '飲料' : defaultRestCat);
       const res = await adminAddItem({
         restaurantId: selectedRest,
         itemName: r.itemName.trim(),
         price: Number(r.price),
-        category: r.category.trim(),
-        subCategory: r.subCategory.trim(),
+        category: itemCat,
+        subCategory: subCat,
         flavors: r.flavors.trim(),
       });
       if (res.ok) successCount++;

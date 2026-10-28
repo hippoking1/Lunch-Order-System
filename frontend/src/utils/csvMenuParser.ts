@@ -60,6 +60,7 @@ export function parseCsvMenuText(
   text: string,
   existingItems: MenuItem[],
   selectedRestaurantId?: string,
+  defaultCategory: string = '正餐',
 ): ParsedMenuItem[] {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length === 0) return [];
@@ -77,7 +78,7 @@ export function parseCsvMenuText(
 
   // Fallback to traditional text parser if not CSV format
   if (!isCsvFormat) {
-    return parseMenuText(text, existingItems, selectedRestaurantId || '__NONE__');
+    return parseMenuText(text, existingItems, selectedRestaurantId || '__NONE__', defaultCategory);
   }
 
   const csvItemRows: CsvItemRow[] = [];
@@ -199,6 +200,10 @@ export function parseCsvMenuText(
     // 優先以純 itemId 取得關聯份量，fallback 至 fullKey
     const portions = portionsByItemKey.get(row.itemId) || portionsByItemKey.get(key) || [];
 
+    const isSubDrink = /^(飲料|飲品)$/.test((row.subCategory || '').trim());
+    const resolvedCategory =
+      defaultCategory === '飲料' || isSubDrink ? '飲料' : defaultCategory || '正餐';
+
     if (!existing) {
       // ADD (真正的新增品項)
       results.push({
@@ -206,7 +211,7 @@ export function parseCsvMenuText(
         restaurantId: targetRestId,
         name: row.itemName,
         price: row.price,
-        category: '飲料',
+        category: resolvedCategory,
         subCategory: row.subCategory,
         flavors: row.flavors,
         portions: portions,
@@ -231,6 +236,15 @@ export function parseCsvMenuText(
           label: '品項名稱',
           oldVal: existing.name,
           newVal: row.itemName,
+        });
+      }
+
+      if ((existing.category || '').trim() !== resolvedCategory) {
+        diffs.push({
+          field: 'category',
+          label: '主分類',
+          oldVal: existing.category || '(無)',
+          newVal: resolvedCategory,
         });
       }
 
@@ -280,10 +294,10 @@ export function parseCsvMenuText(
       results.push({
         itemId: existing.id, // 指向現有正確 ID
         matchedItemId: existing.id,
-        restaurantId: row.restaurantId,
+        restaurantId: targetRestId,
         name: row.itemName,
         price: row.price,
-        category: existing.category,
+        category: resolvedCategory,
         subCategory: row.subCategory || existing.subCategory,
         flavors: row.flavors || existing.flavors,
         portions: portions.length > 0 ? portions : existing.portions || [],

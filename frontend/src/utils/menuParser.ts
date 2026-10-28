@@ -79,11 +79,17 @@ export function parseMenuText(
   text: string,
   existingItems: MenuItem[],
   restaurantId: string,
+  defaultCategory: string = '正餐',
 ): ParsedMenuItem[] {
   const results: ParsedMenuItem[] = [];
   const lines = text.split('\n');
   let currentSection: 'add' | 'remove' | 'sale' | null = null;
-  let currentCategory = '';
+  let currentSubCategory = '';
+
+  const resolveItemCategory = (subCat: string) => {
+    const isSubDrink = /^(飲料|飲品)$/.test((subCat || '').trim());
+    return defaultCategory === '飲料' || isSubDrink ? '飲料' : defaultCategory || '正餐';
+  };
 
   // Build existing items map for matching
   const existingMap = new Map<string, MenuItem>();
@@ -117,7 +123,7 @@ export function parseMenuText(
         currentSection = sec;
         continue;
       }
-      currentCategory = line.replace(/[【】[\]《》]/g, '').trim();
+      currentSubCategory = line.replace(/[【】[\]《》]/g, '').trim();
       continue;
     }
 
@@ -131,8 +137,8 @@ export function parseMenuText(
         results.push({
           name,
           price: sale.salePrice,
-          category: currentCategory,
-          subCategory: '',
+          category: resolveItemCategory(currentSubCategory),
+          subCategory: currentSubCategory,
           portions: [],
           changeType: 'sale',
           oldPrice: sale.originalPrice,
@@ -159,8 +165,8 @@ export function parseMenuText(
           matchedItemId: existing?.id,
           name,
           price: portions[0].price,
-          category: currentCategory,
-          subCategory: '',
+          category: resolveItemCategory(currentSubCategory),
+          subCategory: currentSubCategory,
           portions,
           changeType:
             currentSection === 'remove'
@@ -208,8 +214,8 @@ export function parseMenuText(
         matchedItemId: existing?.id,
         name,
         price,
-        category: currentCategory,
-        subCategory: '',
+        category: resolveItemCategory(currentSubCategory),
+        subCategory: currentSubCategory,
         portions: [],
         changeType,
         oldPrice: existing?.price,
@@ -224,8 +230,8 @@ export function parseMenuText(
           results.push({
             name,
             price: existing.price,
-            category: currentCategory,
-            subCategory: '',
+            category: resolveItemCategory(currentSubCategory),
+            subCategory: currentSubCategory,
             portions: [],
             changeType: 'remove',
             matchedItemId: existing.id,

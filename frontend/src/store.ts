@@ -41,6 +41,24 @@ export function getFreeExtrasCount(itemName: string): number | null {
   return null;
 }
 
+// 判斷餐廳或餐點是否為「飲料」（只有餐廳是飲料店，或該餐點本身/子分類屬於飲料時才顯示甜度與冰塊）
+export function isDrinkItem(
+  item: MenuItem | null | undefined,
+  restaurant: Restaurant | null | undefined,
+  selectedCategory?: string,
+): boolean {
+  const restCat = (restaurant?.category || selectedCategory || '').trim();
+  if (restCat === '飲料') return true;
+  if (!item) return false;
+  const sub = (item.subCategory || '').trim();
+  const cat = (item.category || '').trim();
+  // 若品項有子分類（例如 CSV 匯入之「鍋貼」、「麵類」、「新品」、「飲料」），優先依子分類判定是否為飲料，避免舊版 CSV 匯入將正餐品項 category 誤設為「飲料」
+  if (sub) {
+    return /^(飲料|飲品)$/.test(sub);
+  }
+  return cat === '飲料' || cat === '飲品';
+}
+
 // ── Types ──────────────────────────────────────────
 
 interface AppState {
@@ -227,6 +245,22 @@ export const useStore = create<AppState>((set, get) => {
         const res: any = await fn({ dateStr: today });
         const data = res.data as InitialData;
 
+        if (data.menuPayload?.restaurants && data.menuPayload?.items) {
+          const restCatMap: Record<string, string> = {};
+          data.menuPayload.restaurants.forEach((r) => {
+            restCatMap[r.id] = r.category || '正餐';
+          });
+          data.menuPayload.items = data.menuPayload.items.map((item) => {
+            const restCat = restCatMap[item.restaurantId] || '正餐';
+            const subCat = (item.subCategory || '').trim();
+            let itemCat = (item.category || '').trim() || restCat;
+            if (restCat !== '飲料' && itemCat === '飲料' && subCat && !/^(飲料|飲品)$/.test(subCat)) {
+              itemCat = restCat;
+            }
+            return { ...item, category: itemCat };
+          });
+        }
+
         const defaultCategory = '正餐';
         const locks = data.locks || {};
         const lockedRestId = locks[defaultCategory]?.restaurantId || '';
@@ -268,13 +302,16 @@ export const useStore = create<AppState>((set, get) => {
         const telephones: Record<string, RestaurantTelephone> = {};
         const restaurants: any[] = [];
         const allRests: Restaurant[] = [];
+        const restCatMap: Record<string, string> = {};
         restSnap.docs.forEach((d) => {
           const dat = d.data();
+          const rCat = dat.category || '正餐';
+          restCatMap[d.id] = rCat;
           telephones[d.id] = { name: dat.name || '', telephone: dat.telephone || '' };
           const restItem: Restaurant = {
             id: d.id,
             name: dat.name || '',
-            category: dat.category || '正餐',
+            category: rCat,
             telephone: dat.telephone || '',
             isActive: dat.isActive !== false,
             sweetnessOptions: dat.sweetnessOptions || null,
@@ -303,14 +340,21 @@ export const useStore = create<AppState>((set, get) => {
           const key = `${m.restaurantId}_${m.legacyItemId || d.id}`;
           const portions = portionsMap[key] || [];
           if (!m.isExtra) {
+            const restCat = restCatMap[m.restaurantId] || '正餐';
+            const subCat = (m.subCategory || '').trim();
+            let itemCat = (m.category || '').trim() || restCat;
+            // 自動修正舊版 CSV 匯入將正餐餐廳非飲料子分類誤設為「飲料」的問題
+            if (restCat !== '飲料' && itemCat === '飲料' && subCat && !/^(飲料|飲品)$/.test(subCat)) {
+              itemCat = restCat;
+            }
             items.push({
               id: d.id,
               restaurantId: m.restaurantId,
               name: m.itemName,
               price: Number(m.price || 0),
-              category: m.category || '',
+              category: itemCat,
               image: m.image || '',
-              subCategory: m.subCategory || '',
+              subCategory: subCat,
               flavors: m.flavors || '',
               portions,
               limitedType: m.limitedType || '',
@@ -577,6 +621,11 @@ export const useStore = create<AppState>((set, get) => {
       if (state.note) noteArr.push(state.note);
       if (extrasNames.length > 0) noteArr.push(`加點:${extrasNames.join('、')}`);
 
+      const currentRest = state.menuPayload?.restaurants.find(
+        (r) => r.id === state.selectedRestaurant,
+      );
+      const isDrink = isDrinkItem(item, currentRest, state.selectedCategory);
+
       const payload: OrderPayload = {
         date: state.date,
         employeeName: state.selectedEmployee,
@@ -591,8 +640,8 @@ export const useStore = create<AppState>((set, get) => {
             unitPrice,
             portionName: state.selectedPortion,
             totalPrice,
-            sweetness: state.sweetness,
-            ice: state.ice,
+            sweetness: isDrink ? state.sweetness : '',
+            ice: isDrink ? state.ice : '',
             note: noteArr.join('; '),
             isCustom: item.isCustom,
             customName: item.customName,

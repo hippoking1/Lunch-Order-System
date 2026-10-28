@@ -9,14 +9,19 @@ export async function getFullMenuPayloadInternal() {
   const today = new Date().toISOString().split('T')[0];
 
   const restSnap = await db.collection('restaurants').where('isActive', '==', true).get();
-  const restaurants = restSnap.docs.map(d => ({
-    id: d.id,
-    name: d.data().name || '',
-    category: d.data().category || '',
-    createdAt: d.data().createdAt || '',
-    sweetnessOptions: d.data().sweetnessOptions || null,
-    iceOptions: d.data().iceOptions || null,
-  }));
+  const restCategoryMap: Record<string, string> = {};
+  const restaurants = restSnap.docs.map(d => {
+    const cat = d.data().category || '正餐';
+    restCategoryMap[d.id] = cat;
+    return {
+      id: d.id,
+      name: d.data().name || '',
+      category: cat,
+      createdAt: d.data().createdAt || '',
+      sweetnessOptions: d.data().sweetnessOptions || null,
+      iceOptions: d.data().iceOptions || null,
+    };
+  });
 
   const portionSnap = await db.collection('itemPortions').get();
   const portionsMap: Record<string, Portion[]> = {};
@@ -45,14 +50,21 @@ export async function getFullMenuPayloadInternal() {
     const itemPortions = portionsMap[normKey] || [];
 
     if (!d.isExtra) {
+      const restCat = restCategoryMap[d.restaurantId] || '正餐';
+      const subCat = (d.subCategory || '').trim();
+      let itemCat = (d.category || '').trim() || restCat;
+      if (restCat !== '飲料' && itemCat === '飲料' && subCat && !/^(飲料|飲品)$/.test(subCat)) {
+        itemCat = restCat;
+        doc.ref.update({ category: restCat }).catch(() => {});
+      }
       items.push({
         id: doc.id,
         restaurantId: d.restaurantId,
         name: d.itemName,
         price: Number(d.price || 0),
-        category: d.category || '',
+        category: itemCat,
         image: d.image || '',
-        subCategory: d.subCategory || '',
+        subCategory: subCat,
         flavors: d.flavors || '',
         portions: itemPortions,
         limitedType: d.limitedType || '',
@@ -256,11 +268,31 @@ export async function reactivateMenuItemInternal(restaurantId: string | undefine
 export async function applyMenuChangesInternal(restaurantId: string, changes: any[]) {
   if (!Array.isArray(changes) || changes.length === 0) return { success: true, applied: 0 };
 
+  const restCatCache: Record<string, string> = {};
+  const getRestCat = async (rid: string) => {
+    if (!rid) return '正餐';
+    if (restCatCache[rid]) return restCatCache[rid];
+    const rDoc = await db.collection('restaurants').doc(rid).get();
+    const cat = rDoc.data()?.category || '正餐';
+    restCatCache[rid] = cat;
+    return cat;
+  };
+
   let applied = 0;
   for (const change of changes) {
     const targetRestId = change.restaurantId || restaurantId;
     const itemName = String(change.itemName || change.name || '').trim();
     if (!itemName) continue;
+
+    const restCat = await getRestCat(targetRestId);
+    const subCat = String(change.subCategory || '').trim();
+    const isSubDrink = /^(飲料|飲品)$/.test(subCat);
+    const resolvedCategory =
+      change.category && !(restCat !== '飲料' && change.category === '飲料' && subCat && !isSubDrink)
+        ? change.category
+        : restCat === '飲料' || isSubDrink
+          ? '飲料'
+          : restCat;
 
     // 1. 若前端比對已直接給出明確的 itemId，先嘗試直接以 docId 取得
     let targetDoc: admin.firestore.DocumentSnapshot | null = null;
@@ -288,9 +320,9 @@ export async function applyMenuChangesInternal(restaurantId: string, changes: an
           itemName,
           normalizedName: normalizeName(itemName),
           price: Number(change.price || 0),
+          category: resolvedCategory,
           isActive: true
         };
-        if (change.category) updatePayload.category = change.category;
         if (change.subCategory !== undefined) updatePayload.subCategory = change.subCategory;
         if (change.flavors !== undefined) updatePayload.flavors = change.flavors;
         if (change.limitedType !== undefined) updatePayload.limitedType = change.limitedType;
@@ -302,7 +334,7 @@ export async function applyMenuChangesInternal(restaurantId: string, changes: an
           restaurantId: targetRestId,
           itemName,
           price: change.price,
-          category: change.category || '正餐',
+          category: resolvedCategory,
           subCategory: change.subCategory || '',
           flavors: change.flavors || '',
           limitedType: change.limitedType || '',
@@ -317,6 +349,7 @@ export async function applyMenuChangesInternal(restaurantId: string, changes: an
           itemName,
           normalizedName: normalizeName(itemName),
           price: Number(change.price || 0),
+          category: resolvedCategory,
           subCategory: change.subCategory || targetDoc.data()?.subCategory || '',
           isActive: true
         });
@@ -325,7 +358,7 @@ export async function applyMenuChangesInternal(restaurantId: string, changes: an
           restaurantId: targetRestId,
           itemName,
           price: change.price,
-          category: change.category || '正餐',
+          category: resolvedCategory,
           subCategory: change.subCategory || '',
           flavors: change.flavors || '',
           limitedType: change.limitedType || '',

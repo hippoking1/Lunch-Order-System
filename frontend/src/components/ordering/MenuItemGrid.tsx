@@ -1,12 +1,13 @@
 import { useMemo, useState, useCallback } from 'react';
 import classNames from 'classnames';
 import { Search, Sparkles, Zap, Loader2 } from 'lucide-react';
-import { useStore } from '../../store';
+import { useStore, isDrinkItem } from '../../store';
 import type { MenuItem, FrequentOrderEntry } from '../../types';
 
 export default function MenuItemGrid() {
   const menuPayload = useStore((s) => s.menuPayload);
   const selectedRestaurant = useStore((s) => s.selectedRestaurant);
+  const selectedCategory = useStore((s) => s.selectedCategory);
   const selectedItem = useStore((s) => s.selectedItem);
   const setItem = useStore((s) => s.setItem);
   const customItemName = useStore((s) => s.customItemName);
@@ -137,26 +138,36 @@ export default function MenuItemGrid() {
             {frequentOrdersLoading && <Loader2 size={12} className="animate-spin" style={{ marginLeft: 4 }} />}
           </div>
           <div className="flex flex-col gap-2">
-            {frequentOrders.map((fo, idx) => (
-              <div
-                key={`${fo.itemId}-${idx}`}
-                className="quick-order-card"
-                onClick={() => handleFrequentOrder(fo)}
-              >
-                <div className="flex-1">
-                  <div className="option-name truncate">{fo.itemName}</div>
-                  {(fo.note || fo.sweetness || fo.ice) && (
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                      {[fo.sweetness, fo.ice, fo.note].filter(Boolean).join(' · ')}
-                    </div>
-                  )}
+            {frequentOrders.map((fo, idx) => {
+              const currentRest = menuPayload?.restaurants.find((r) => r.id === selectedRestaurant);
+              const matchedItem = menuItems.find(
+                (i) => String(i.id) === String(fo.itemId) || i.name === fo.itemName,
+              );
+              const isDrink = isDrinkItem(matchedItem, currentRest, selectedCategory);
+              const detailParts = isDrink
+                ? [fo.sweetness, fo.ice, fo.note].filter(Boolean)
+                : [fo.note].filter(Boolean);
+              return (
+                <div
+                  key={`${fo.itemId}-${idx}`}
+                  className="quick-order-card"
+                  onClick={() => handleFrequentOrder(fo)}
+                >
+                  <div className="flex-1">
+                    <div className="option-name truncate">{fo.itemName}</div>
+                    {detailParts.length > 0 && (
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        {detailParts.join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <span className="option-price mono">${fo.unitPrice}</span>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>×{fo.count}</div>
+                  </div>
                 </div>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <span className="option-price mono">${fo.unitPrice}</span>
-                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>×{fo.count}</div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

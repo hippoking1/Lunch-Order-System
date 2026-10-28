@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import classNames from 'classnames';
 import { Loader2, Plus, Minus, Send } from 'lucide-react';
-import { useStore, getFreeExtrasCount } from '../../store';
+import { useStore, getFreeExtrasCount, isDrinkItem } from '../../store';
 import { SWEETNESS_OPTIONS, ICE_OPTIONS } from '../../constants';
 import type { Extra } from '../../types';
 
@@ -102,9 +102,11 @@ export default function ItemCustomizer() {
     ? currentRest.iceOptions
     : ICE_OPTIONS;
 
-  const isDrink =
-    store.selectedItem?.category === '飲料' ||
-    store.selectedCategory === '飲料';
+  const isDrink = isDrinkItem(
+    store.selectedItem,
+    currentRest,
+    store.selectedCategory,
+  );
 
   const handleSubmit = async () => {
     await store.submitOrder();

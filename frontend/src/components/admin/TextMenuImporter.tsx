@@ -235,19 +235,23 @@ RestaurantID,ItemID,PortionName,Price
   const handleParse = () => {
     if (!text.trim()) return;
     const items = menuPayload?.items || [];
-    
+    const targetRestObj = restaurants.find((r) => r.id === selectedRestaurant);
+    const defaultCat = targetRestObj?.category || '正餐';
+
     // Check if input is CSV format
     const isCsv = text.toLowerCase().includes('restaurantid') || text.toLowerCase().includes('itemid');
-    
+
     let result: ParsedMenuItem[];
     if (isCsv) {
-      result = parseCsvMenuText(text, items, selectedRestaurant);
+      result = parseCsvMenuText(text, items, selectedRestaurant, defaultCat);
       // Auto-detect restaurant if not selected
       if (selectedRestaurant === '__NONE__' && result.length > 0 && result[0].restaurantId) {
         const detectedId = result[0].restaurantId;
         const exists = restaurants.find((r) => r.id === detectedId);
         if (exists) {
           setSelectedRestaurant(detectedId);
+          // Re-parse with detected restaurant category
+          result = parseCsvMenuText(text, items, detectedId, exists.category || '正餐');
         }
       }
     } else {
@@ -255,7 +259,7 @@ RestaurantID,ItemID,PortionName,Price
         addToast('error', '請選擇目標餐廳');
         return;
       }
-      result = parseMenuText(text, items, selectedRestaurant);
+      result = parseMenuText(text, items, selectedRestaurant, defaultCat);
     }
 
     setParsedItems(result);
