@@ -75,7 +75,7 @@ graph LR
 | **狀態管理** | Zustand | 輕量高響應的全域狀態控制 |
 | **UI 與樣式** | Vanilla CSS3 + Modern Glassmorphism | 高對比暗色科技主題，深度自適應 RWD |
 | **圖標庫** | Lucide React | 清晰現代化的向量圖標集 |
-| **後端計算** | Firebase Cloud Functions (Node 20) | 2nd Gen HTTPS Callable & REST API (台灣機房) |
+| **後端計算** | Firebase Cloud Functions (Node 22) | 2nd Gen HTTPS Callable & REST API (台灣機房) |
 | **資料庫** | Google Cloud Firestore | NoSQL 即時資料庫，複合索引與安全規則保護 |
 | **CI/CD** | GitHub Actions | Push main 自動建置發布至 GitHub Pages |
 
