@@ -19,5 +19,6 @@ export const CATEGORY_ICONS: Record<Category, string> = {
 // localStorage keys
 export const LS_THEME_KEY = 'lunch-order-theme';
 export const LS_QUICK_ORDER_KEY = 'lunch-order-quick';
-export const LS_MENU_CACHE_KEY = 'lunch-order-menu-cache';
+export const LS_MENU_CACHE_KEY = 'lunch-order-menu-cache-v2';
+export const LS_EMP_CACHE_KEY = 'lunch-order-emp-cache-v2';
 export const LS_LAST_EMPLOYEE_KEY = 'lunch-order-last-emp';

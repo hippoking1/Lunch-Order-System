@@ -3,11 +3,11 @@
 [![Deploy to GitHub Pages](https://github.com/hippoking1/Lunch-Order-System/actions/workflows/deploy.yml/badge.svg)](https://github.com/hippoking1/Lunch-Order-System/actions/workflows/deploy.yml)
 [![React 19](https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Vite](https://img.shields.io/badge/Vite-6.x-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Firebase](https://img.shields.io/badge/Firebase-Functions%20%26%20Firestore-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/)
+[![Vite](https://img.shields.io/badge/Vite-8.x-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Firebase](https://img.shields.io/badge/Firebase-Spark%20$0%20Firestore%20%26%20Auth-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/)
 
 > 現代化、高效能、支援多規格自訂與對帳的企業級午餐與飲料訂餐系統。  
-> 專為公司內部訂餐流程打造，全面由舊有 Google Apps Script (GAS) 升級遷移至 **GitHub Pages + Firebase (Firestore & Cloud Functions 2nd Gen)** 現代化無伺服器架構。
+> 專為公司內部訂餐流程打造，採用 **GitHub Pages + Firebase Spark 免費方案 (Firestore 聚合快取 & 即時監聽 + Firebase Auth)** 零費用架構。
 
 🌐 **線上使用網址 (Live Demo)**：[https://hippoking1.github.io/Lunch-Order-System/](https://hippoking1.github.io/Lunch-Order-System/)
 
@@ -54,21 +54,21 @@
 ```mermaid
 graph LR
   A[使用者瀏覽器] -->|靜態託管 / CI/CD| B(GitHub Pages)
-  A -->|即時狀態讀取 / 離線快取| C[(Cloud Firestore)]
-  A -->|身分認證| D[Firebase Auth]
-  A -->|點餐 / 菜單更新 / 管理 API| E[Cloud Functions 2nd Gen]
-  E -->|asia-east1 台灣節點| C
+  A -->|1 read 版本檢查 + localStorage 快取| C[(Cloud Firestore)]
+  A -->|當日訂單 onSnapshot 即時監聽| C
+  A -->|管理員身分認證| D[Firebase Auth]
+  C -->|Security Rules 權限控管| D
 ```
 
 | 領域 | 技術 / 工具 | 說明 |
 | :--- | :--- | :--- |
 | **前端框架** | React 19 + TypeScript | 最新 React 核心，全型別保障 |
-| **建構工具** | Vite 6 | 極速開發與生產打包優化 |
+| **建構工具** | Vite 8 | 極速開發與生產打包優化 |
 | **狀態管理** | Zustand | 輕量高響應的全域狀態控制 |
 | **UI 與樣式** | Vanilla CSS3 + Modern Glassmorphism | 高對比暗色科技主題，深度自適應 RWD |
 | **圖標庫** | Lucide React | 清晰現代化的向量圖標集 |
-| **後端計算** | Firebase Cloud Functions (Node 22) | 2nd Gen HTTPS Callable & REST API (台灣機房) |
-| **資料庫** | Google Cloud Firestore | NoSQL 即時資料庫，複合索引與安全規則保護 |
+| **資料層與交易** | Cloud Firestore SDK (`runTransaction` + `onSnapshot`) | 版本化菜單聚合快取 (`catalog/menuBundle`) + 當日訂單即時同步 |
+| **認證與規則** | Firebase Auth + Firestore Security Rules | `adminEmails` 白名單控管後台寫入權限，維持 Spark 免費方案 ($0/月) |
 | **CI/CD** | GitHub Actions | Push main 自動建置發布至 GitHub Pages |
 
 ---

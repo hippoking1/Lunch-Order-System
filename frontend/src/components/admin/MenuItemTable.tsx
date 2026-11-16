@@ -21,6 +21,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
   const adminAddItem = useStore((s) => s.adminAddItem);
   const adminUpdateItem = useStore((s) => s.adminUpdateItem);
   const adminDeactivateItem = useStore((s) => s.adminDeactivateItem);
+  const syncCatalogCache = useStore((s) => s.syncCatalogCache);
   const addToast = useToast((s) => s.addToast);
   const newItemDisplayDays = useStore((s) => s.newItemDisplayDays);
   const adminUpdateNewItemDisplayDays = useStore((s) => s.adminUpdateNewItemDisplayDays);
@@ -147,15 +148,21 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
       const subCat = r.subCategory.trim();
       const isSubDrink = /^(飲料|飲品)$/.test(subCat);
       const itemCat = r.category.trim() || (defaultRestCat === '飲料' || isSubDrink ? '飲料' : defaultRestCat);
-      const res = await adminAddItem({
-        restaurantId: selectedRest,
-        itemName: r.itemName.trim(),
-        price: Number(r.price),
-        category: itemCat,
-        subCategory: subCat,
-        flavors: r.flavors.trim(),
-      });
+      const res = await adminAddItem(
+        {
+          restaurantId: selectedRest,
+          itemName: r.itemName.trim(),
+          price: Number(r.price),
+          category: itemCat,
+          subCategory: subCat,
+          flavors: r.flavors.trim(),
+        },
+        { skipSync: true },
+      );
       if (res.ok) successCount++;
+    }
+    if (successCount > 0) {
+      await syncCatalogCache();
     }
     setSavingBatch(false);
     if (successCount > 0) {
@@ -219,14 +226,20 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
     setSavingExtrasBatch(true);
     let successCount = 0;
     for (const r of validRows) {
-      const res = await adminAddExtra({
-        restaurantId: selectedRest,
-        name: r.name.trim(),
-        price: Number(r.price),
-        group: r.group.trim() || '加料',
-        type: r.type,
-      });
+      const res = await adminAddExtra(
+        {
+          restaurantId: selectedRest,
+          name: r.name.trim(),
+          price: Number(r.price),
+          group: r.group.trim() || '加料',
+          type: r.type,
+        },
+        { skipSync: true },
+      );
       if (res.ok) successCount++;
+    }
+    if (successCount > 0) {
+      await syncCatalogCache();
     }
     setSavingExtrasBatch(false);
     if (successCount > 0) {
@@ -249,14 +262,20 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
     setSavingCombosBatch(true);
     let successCount = 0;
     for (const r of validRows) {
-      const res = await adminAddExtra({
-        restaurantId: selectedRest,
-        name: r.name.trim(),
-        price: Number(r.price),
-        group: r.group.trim() || '套餐',
-        type: 'single',
-      });
+      const res = await adminAddExtra(
+        {
+          restaurantId: selectedRest,
+          name: r.name.trim(),
+          price: Number(r.price),
+          group: r.group.trim() || '套餐',
+          type: 'single',
+        },
+        { skipSync: true },
+      );
       if (res.ok) successCount++;
+    }
+    if (successCount > 0) {
+      await syncCatalogCache();
     }
     setSavingCombosBatch(false);
     if (successCount > 0) {

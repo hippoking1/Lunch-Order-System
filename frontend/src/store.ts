@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { httpsCallable } from 'firebase/functions';
 import {
   signInWithPopup,
   signInWithRedirect,
@@ -10,14 +9,46 @@ import {
   onAuthStateChanged,
   type User as FirebaseUser,
 } from 'firebase/auth';
-import { functions, auth, db } from './firebase';
+import type { Unsubscribe } from 'firebase/firestore';
+import { auth } from './firebase';
+import {
+  getTodayDateString,
+  loadCatalogWithCache,
+  filterActiveMenuForDate,
+  subscribeDailyRealtime,
+  fetchDailyStateOnce,
+  getEmployeeInfoApi,
+  getUserRoleApi,
+  submitOrderApi,
+  deleteOrderApi,
+  performDepositApi,
+  saveEmployeePaymentApi,
+  updateOrderNoteApi,
+  getFrequentOrdersApi,
+  lockCategoryRestaurantApi,
+  unlockCategoryApi,
+  confirmRestaurantOrderApi,
+  cancelRestaurantConfirmationApi,
+  readFullMenuFromCollections,
+  rebuildCatalogBundleFromFirestore,
+  addRestaurantApi,
+  updateRestaurantApi,
+  toggleRestaurantActiveApi,
+  updateRestaurantCustomOptionsApi,
+  addOrUpdateMenuItemApi,
+  setMenuItemActiveApi,
+  applyMenuChangesApi,
+  setSpecialPriceApi,
+  removeSpecialPriceApi,
+  updateNewItemDisplayDaysApi,
+  cleanupDuplicateMenuItemsApi,
+} from './services/firestoreApi';
 import type {
   AdminData,
   AppTab,
   Confirmation,
   Extra,
   FrequentOrderEntry,
-  InitialData,
   LockRecord,
   MenuItem,
   MenuPayload,
@@ -30,9 +61,20 @@ import type {
 // 解析「X選Y」規則的 Helper 函數
 export function getFreeExtrasCount(itemName: string): number | null {
   const chineseToNum: Record<string, number> = {
-    '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10
+    一: 1,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+    十: 10,
   };
-  const match = itemName.match(/(?:配料區)?([一二三四五六七八九十\d]+)選([一二三四五六七八九十\d]+)/);
+  const match = itemName.match(
+    /(?:配料區)?([一二三四五六七八九十\d]+)選([一二三四五六七八九十\d]+)/,
+  );
   if (match) {
     const selectStr = match[2];
     const count = chineseToNum[selectStr] || parseInt(selectStr, 10);
@@ -52,7 +94,6 @@ export function isDrinkItem(
   if (!item) return false;
   const sub = (item.subCategory || '').trim();
   const cat = (item.category || '').trim();
-  // 若品項有子分類（例如 CSV 匯入之「鍋貼」、「麵類」、「新品」、「飲料」），優先依子分類判定是否為飲料，避免舊版 CSV 匯入將正餐品項 category 誤設為「飲料」
   if (sub) {
     return /^(飲料|飲品)$/.test(sub);
   }
@@ -60,6 +101,10 @@ export function isDrinkItem(
 }
 
 // ── Types ──────────────────────────────────────────
+
+interface AdminMutationOptions {
+  skipSync?: boolean;
+}
 
 interface AppState {
   initialized: boolean;
@@ -107,6 +152,7 @@ interface AppState {
 
   // Actions
   init: (dateStr?: string) => Promise<void>;
+  cleanupRealtime: () => void;
   setLoading: (l: boolean) => void;
   setActiveTab: (tab: AppTab) => void;
   setSearchQuery: (q: string) => void;
@@ -140,38 +186,110 @@ interface AppState {
   frequentOrdersLoading: boolean;
   fetchFrequentOrders: (employee: string, restaurantId: string) => Promise<void>;
   applyFrequentOrder: (fo: FrequentOrderEntry) => void;
-  lockCategoryRestaurant: (category: string, restaurantId: string) => Promise<{ ok: boolean; error?: string }>;
-  unlockCategory: (category: string) => Promise<{ ok: boolean; error?: string }>;
+  lockCategoryRestaurant: (
+    category: string,
+    restaurantId: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  unlockCategory: (
+    category: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
 
   // Admin & Auth actions
   loginWithGoogle: () => Promise<{ ok: boolean; error?: string; code?: string }>;
   loginWithGoogleRedirect: () => Promise<void>;
-  loginWithEmail: (email: string, pass: string) => Promise<{ ok: boolean; error?: string; code?: string }>;
+  loginWithEmail: (
+    email: string,
+    pass: string,
+  ) => Promise<{ ok: boolean; error?: string; code?: string }>;
   logoutAdmin: () => Promise<void>;
   checkUserRole: (emp: string) => Promise<void>;
   loadAdminData: () => Promise<void>;
-  adminAddItem: (data: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
-  adminAddRestaurant: (data: { name: string; category: string; telephone?: string }) => Promise<{ ok: boolean; restaurantId?: string; error?: string }>;
-  adminUpdateRestaurant: (data: { restaurantId: string; name?: string; category?: string; telephone?: string }) => Promise<{ ok: boolean; error?: string }>;
-  adminToggleRestaurantActive: (restaurantId: string, isActive: boolean) => Promise<{ ok: boolean; error?: string }>;
-  adminUpdateItem: (data: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
-  adminDeactivateItem: (restaurantId: string, itemId: string) => Promise<{ ok: boolean; error?: string }>;
-  adminReactivateItem: (restaurantId: string, itemId: string) => Promise<{ ok: boolean; error?: string }>;
-  adminApplyChanges: (restaurantId: string, changes: unknown[]) => Promise<{ ok: boolean; error?: string }>;
-  adminSetSpecialPrice: (data: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
-  adminRemoveSpecialPrice: (restaurantId: string, itemId: string, portionName: string) => Promise<{ ok: boolean; error?: string }>;
-  adminUpdateNewItemDisplayDays: (days: number) => Promise<{ ok: boolean; error?: string }>;
-  adminAddExtra: (data: { restaurantId: string; name: string; price: number; group?: string; type?: 'extra' | 'single' }) => Promise<{ ok: boolean; error?: string }>;
-  adminUpdateExtra: (data: { id: string; restaurantId?: string; name?: string; price?: number; group?: string; type?: 'extra' | 'single' }) => Promise<{ ok: boolean; error?: string }>;
-  adminDeleteExtra: (id: string, restaurantId?: string) => Promise<{ ok: boolean; error?: string }>;
-  adminUpdateRestaurantCustomOptions: (data: { restaurantId: string; sweetnessOptions?: string[]; iceOptions?: string[] }) => Promise<{ ok: boolean; error?: string }>;
-  adminCleanupDuplicates: (restaurantId?: string) => Promise<{ ok: boolean; deletedCount?: number; error?: string }>;
+  syncCatalogCache: () => Promise<void>;
+  adminAddItem: (
+    data: Record<string, unknown>,
+    opts?: AdminMutationOptions,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  adminAddRestaurant: (data: {
+    name: string;
+    category: string;
+    telephone?: string;
+  }) => Promise<{ ok: boolean; restaurantId?: string; error?: string }>;
+  adminUpdateRestaurant: (data: {
+    restaurantId: string;
+    name?: string;
+    category?: string;
+    telephone?: string;
+  }) => Promise<{ ok: boolean; error?: string }>;
+  adminToggleRestaurantActive: (
+    restaurantId: string,
+    isActive: boolean,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  adminUpdateItem: (
+    data: Record<string, unknown>,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  adminDeactivateItem: (
+    restaurantId: string,
+    itemId: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  adminReactivateItem: (
+    restaurantId: string,
+    itemId: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  adminApplyChanges: (
+    restaurantId: string,
+    changes: unknown[],
+  ) => Promise<{ ok: boolean; error?: string }>;
+  adminSetSpecialPrice: (
+    data: Record<string, unknown>,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  adminRemoveSpecialPrice: (
+    restaurantId: string,
+    itemId: string,
+    portionName: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  adminUpdateNewItemDisplayDays: (
+    days: number,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  adminAddExtra: (
+    data: {
+      restaurantId: string;
+      name: string;
+      price: number;
+      group?: string;
+      type?: 'extra' | 'single';
+    },
+    opts?: AdminMutationOptions,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  adminUpdateExtra: (data: {
+    id: string;
+    restaurantId?: string;
+    name?: string;
+    price?: number;
+    group?: string;
+    type?: 'extra' | 'single';
+  }) => Promise<{ ok: boolean; error?: string }>;
+  adminDeleteExtra: (
+    id: string,
+    restaurantId?: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  adminUpdateRestaurantCustomOptions: (data: {
+    restaurantId: string;
+    sweetnessOptions?: string[];
+    iceOptions?: string[];
+  }) => Promise<{ ok: boolean; error?: string }>;
+  adminCleanupDuplicates: (
+    restaurantId?: string,
+  ) => Promise<{ ok: boolean; deletedCount?: number; error?: string }>;
 }
+
+// ── Realtime Subscription Tracker ─────────────────────
+
+let activeDailyUnsubscribe: Unsubscribe | null = null;
+let activeSubscribedDate = '';
 
 // ── Store ─────────────────────────────────────────────
 
 export const useStore = create<AppState>((set, get) => {
-  // 初始化 Auth 狀態監聽
   onAuthStateChanged(auth, (user) => {
     set({ adminUser: user });
     if (user) {
@@ -179,7 +297,6 @@ export const useStore = create<AppState>((set, get) => {
     }
   });
 
-  // 監聽 Redirect 登入結果 (若有使用 signInWithRedirect)
   getRedirectResult(auth)
     .then((res) => {
       if (res?.user) {
@@ -189,6 +306,24 @@ export const useStore = create<AppState>((set, get) => {
     .catch((err) => {
       console.warn('[Auth] getRedirectResult failed:', err);
     });
+
+  const applyRebuiltCatalog = async () => {
+    const { raw } = await rebuildCatalogBundleFromFirestore();
+    const filtered = filterActiveMenuForDate(
+      raw,
+      get().date || getTodayDateString(),
+    );
+    set({
+      menuPayload: filtered.menuPayload,
+      allRestaurants: filtered.allRestaurants,
+      telephones: filtered.telephones,
+      newItemDisplayDays: filtered.newItemDisplayDays,
+      adminData: {
+        menuPayload: filtered.menuPayload,
+        specialPrices: filtered.menuPayload.specialPrices || [],
+      },
+    });
+  };
 
   return {
     initialized: false,
@@ -219,7 +354,6 @@ export const useStore = create<AppState>((set, get) => {
     sweetness: '正常',
     ice: '正常',
     note: '',
-    // 修正 Bug 8：預設不勾選使用餘額，由使用者自行決定
     useBalance: false,
     customItemName: '',
     customItemPrice: '',
@@ -233,215 +367,76 @@ export const useStore = create<AppState>((set, get) => {
     frequentOrders: [],
     frequentOrdersLoading: false,
 
-    // ── Init ──
+    // ── Init & Realtime Subscription ──
 
     init: async (dateStr?: string) => {
-      const today = dateStr || new Date().toISOString().split('T')[0];
-      set({ loading: true, date: today });
+      const targetDate = dateStr || getTodayDateString();
+      set({ loading: true, date: targetDate });
 
-      // 嘗試 1：呼叫 Cloud Functions (標準管道)
       try {
-        const fn = httpsCallable(functions, 'getInitialData');
-        const res: any = await fn({ dateStr: today });
-        const data = res.data as InitialData;
+        const catalog = await loadCatalogWithCache(targetDate);
+        const defaultCategory = get().selectedCategory || '正餐';
 
-        if (data.menuPayload?.restaurants && data.menuPayload?.items) {
-          const restCatMap: Record<string, string> = {};
-          data.menuPayload.restaurants.forEach((r) => {
-            restCatMap[r.id] = r.category || '正餐';
-          });
-          data.menuPayload.items = data.menuPayload.items.map((item) => {
-            const restCat = restCatMap[item.restaurantId] || '正餐';
-            const subCat = (item.subCategory || '').trim();
-            let itemCat = (item.category || '').trim() || restCat;
-            if (restCat !== '飲料' && itemCat === '飲料' && subCat && !/^(飲料|飲品)$/.test(subCat)) {
-              itemCat = restCat;
-            }
-            return { ...item, category: itemCat };
+        set({
+          initialized: true,
+          loading: false,
+          date: targetDate,
+          telephones: catalog.telephones,
+          employees: catalog.employees,
+          menuPayload: catalog.menuPayload,
+          allRestaurants: catalog.allRestaurants,
+          newItemDisplayDays: catalog.newItemDisplayDays,
+          selectedCategory: defaultCategory,
+        });
+
+        // 切換日期或首次啟動時建立當日即時監聽 (onSnapshot)
+        if (!activeDailyUnsubscribe || activeSubscribedDate !== targetDate) {
+          if (activeDailyUnsubscribe) {
+            activeDailyUnsubscribe();
+            activeDailyUnsubscribe = null;
+          }
+          activeSubscribedDate = targetDate;
+
+          let isFirstLocksSnapshot = true;
+          activeDailyUnsubscribe = subscribeDailyRealtime(targetDate, {
+            onOrders: (orders) => {
+              if (get().date === targetDate) {
+                set({ summary: orders });
+              }
+            },
+            onConfirmations: (confirmations) => {
+              if (get().date === targetDate) {
+                set({ confirmations });
+              }
+            },
+            onLocks: (locks) => {
+              if (get().date === targetDate) {
+                const updates: Partial<AppState> = { locks };
+                if (isFirstLocksSnapshot && !get().selectedRestaurant) {
+                  const cat = get().selectedCategory || '正餐';
+                  const lockedId = locks[cat]?.restaurantId || '';
+                  if (lockedId) updates.selectedRestaurant = lockedId;
+                }
+                isFirstLocksSnapshot = false;
+                set(updates);
+              }
+            },
+            onError: (err) => {
+              console.error('[subscribeDailyRealtime] error:', err);
+            },
           });
         }
-
-        const defaultCategory = '正餐';
-        const locks = data.locks || {};
-        const lockedRestId = locks[defaultCategory]?.restaurantId || '';
-
-        set({
-          initialized: true,
-          loading: false,
-          date: data.date || today,
-          telephones: data.telephones || {},
-          employees: data.employees || [],
-          summary: data.summary || [],
-          confirmations: data.confirmations || {},
-          locks: locks,
-          menuPayload: data.menuPayload,
-          allRestaurants: data.menuPayload?.restaurants || get().allRestaurants,
-          newItemDisplayDays: data.menuPayload?.newItemDisplayDays ?? 7,
-          selectedCategory: defaultCategory,
-          selectedRestaurant: lockedRestId,
-        });
-        return;
-      } catch (fnErr: any) {
-        console.warn('[init] Cloud Functions getInitialData failed or cold-starting, falling back to Firestore direct read...', fnErr);
-      }
-
-      // 嘗試 2：Firestore 直連 Fallback (雙保險，保證首頁 1 秒內有菜單)
-      try {
-        const { collection, getDocs } = await import('firebase/firestore');
-        const [usersSnap, restSnap, menuSnap, portionSnap, ordersSnap, confSnap, locksSnap] = await Promise.all([
-          getDocs(collection(db, 'users')),
-          getDocs(collection(db, 'restaurants')),
-          getDocs(collection(db, 'menuItems')),
-          getDocs(collection(db, 'itemPortions')),
-          getDocs(collection(db, 'orders')),
-          getDocs(collection(db, 'confirmations')),
-          getDocs(collection(db, 'categoryLocks')),
-        ]);
-
-        const employees = usersSnap.docs.map((d) => d.id).sort((a, b) => a.localeCompare(b, 'zh-Hant'));
-        const telephones: Record<string, RestaurantTelephone> = {};
-        const restaurants: any[] = [];
-        const allRests: Restaurant[] = [];
-        const restCatMap: Record<string, string> = {};
-        restSnap.docs.forEach((d) => {
-          const dat = d.data();
-          const rCat = dat.category || '正餐';
-          restCatMap[d.id] = rCat;
-          telephones[d.id] = { name: dat.name || '', telephone: dat.telephone || '' };
-          const restItem: Restaurant = {
-            id: d.id,
-            name: dat.name || '',
-            category: rCat,
-            telephone: dat.telephone || '',
-            isActive: dat.isActive !== false,
-            sweetnessOptions: dat.sweetnessOptions || null,
-            iceOptions: dat.iceOptions || null,
-            createdAt: dat.createdAt || '',
-          };
-          allRests.push(restItem);
-          if (dat.isActive !== false) {
-            restaurants.push(restItem);
-          }
-        });
-
-        const portionsMap: Record<string, any[]> = {};
-        portionSnap.docs.forEach((d) => {
-          const p = d.data();
-          const key = `${p.restaurantId}_${p.legacyItemId || p.portionName}`;
-          if (!portionsMap[key]) portionsMap[key] = [];
-          portionsMap[key].push({ name: p.portionName, price: Number(p.price || 0) });
-        });
-
-        const items: any[] = [];
-        const extras: any[] = [];
-        menuSnap.docs.forEach((d) => {
-          const m = d.data();
-          if (m.isActive === false) return;
-          const key = `${m.restaurantId}_${m.legacyItemId || d.id}`;
-          const portions = portionsMap[key] || [];
-          if (!m.isExtra) {
-            const restCat = restCatMap[m.restaurantId] || '正餐';
-            const subCat = (m.subCategory || '').trim();
-            let itemCat = (m.category || '').trim() || restCat;
-            // 自動修正舊版 CSV 匯入將正餐餐廳非飲料子分類誤設為「飲料」的問題
-            if (restCat !== '飲料' && itemCat === '飲料' && subCat && !/^(飲料|飲品)$/.test(subCat)) {
-              itemCat = restCat;
-            }
-            items.push({
-              id: d.id,
-              restaurantId: m.restaurantId,
-              name: m.itemName,
-              price: Number(m.price || 0),
-              category: itemCat,
-              image: m.image || '',
-              subCategory: subCat,
-              flavors: m.flavors || '',
-              portions,
-              limitedType: m.limitedType || '',
-              startDate: m.startDate || '',
-              endDate: m.endDate || '',
-              createdAt: m.createdAt || ''
-            });
-          } else {
-            extras.push({
-              id: d.id,
-              restaurantId: m.restaurantId,
-              name: m.itemName,
-              price: Number(m.price || 0),
-              type: m.extraType || 'extra',
-              group: m.extraGroup || '加點'
-            });
-          }
-        });
-
-        const summary: OrderRecord[] = [];
-        ordersSnap.docs.forEach((d) => {
-          const o = d.data();
-          if (o.date === today) {
-            summary.push({
-              id: d.id,
-              rowNumber: d.id,
-              employee: o.employeeName || '',
-              restaurantId: o.restaurantId || '',
-              item: o.itemName || '',
-              category: o.category || '其他',
-              subCategory: o.subCategory || '',
-              quantity: Number(o.quantity || 1),
-              unitPrice: Number(o.unitPrice || 0),
-              totalPrice: Number(o.totalPrice || 0),
-              sweetness: o.sweetness || '',
-              ice: o.ice || '',
-              note: o.note || '',
-              paidAmount: o.paidAmount ?? '',
-              changeAmount: o.changeAmount ?? '',
-              isChangeGiven: Boolean(o.isChangeGiven),
-              isPaidByBalance: Boolean(o.isPaidByBalance),
-              createdAt: o.createdAt || ''
-            });
-          }
-        });
-
-        const confirmations: Record<string, any> = {};
-        confSnap.docs.forEach((d) => {
-          const c = d.data();
-          if (c.date === today) {
-            confirmations[c.restaurantId] = { confirmedBy: c.confirmedBy || '', confirmedAt: c.confirmedAt || '' };
-          }
-        });
-
-        const locks: Record<string, any> = {};
-        locksSnap.docs.forEach((d) => {
-          const l = d.data();
-          if (l.date === today) {
-            locks[l.category] = { restaurantId: l.restaurantId, lockedBy: l.lockedBy || '', lockedAt: l.lockedAt || '' };
-          }
-        });
-
-        const defaultCategory = '正餐';
-        set({
-          initialized: true,
-          loading: false,
-          date: today,
-          telephones,
-          employees,
-          summary,
-          confirmations,
-          locks,
-          allRestaurants: allRests,
-          menuPayload: {
-            restaurants,
-            items,
-            extras,
-            specialPrices: [],
-            newItemDisplayDays: 7
-          },
-          newItemDisplayDays: 7,
-          selectedCategory: defaultCategory,
-          selectedRestaurant: locks[defaultCategory]?.restaurantId || '',
-        });
-      } catch (err: any) {
-        console.error('[init] Firestore direct read also failed:', err);
+      } catch (err) {
+        console.error('[init] failed:', err);
         set({ initialized: true, loading: false });
+      }
+    },
+
+    cleanupRealtime: () => {
+      if (activeDailyUnsubscribe) {
+        activeDailyUnsubscribe();
+        activeDailyUnsubscribe = null;
+        activeSubscribedDate = '';
       }
     },
 
@@ -454,27 +449,20 @@ export const useStore = create<AppState>((set, get) => {
 
     setEmployee: async (emp) => {
       const trimmedEmp = emp.trim();
-      // 修正 Bug 8：切換員工時保持 useBalance 為 false
       set({ selectedEmployee: emp, balance: null, useBalance: false });
 
       if (trimmedEmp && get().employees.includes(trimmedEmp)) {
         try {
-          const balFn = httpsCallable(functions, 'getEmployeeBalanceCallable');
-          const balRes: any = await balFn({ name: trimmedEmp });
-          const bal = Number(balRes.data || 0);
-
+          const info = await getEmployeeInfoApi(
+            trimmedEmp,
+            get().adminUser?.email,
+          );
           if (get().selectedEmployee.trim() === trimmedEmp) {
-            // 修正 Bug 8：取得餘額後不強制設定 useBalance: bal > 0，一律維持使用者決定
-            set({ balance: bal, useBalance: false });
-          }
-
-          // 角色查詢
-          const roleFn = httpsCallable(functions, 'getUserRoleCallable');
-          const roleRes: any = await roleFn({ name: trimmedEmp });
-          const role = roleRes.data === 'admin' || get().adminUser !== null ? 'admin' : 'user';
-
-          if (get().selectedEmployee.trim() === trimmedEmp) {
-            set({ userRole: role });
+            const role =
+              info.role === 'admin' || get().adminUser !== null
+                ? 'admin'
+                : 'user';
+            set({ balance: info.balance, useBalance: false, userRole: role });
           }
         } catch (err) {
           console.error('[setEmployee] failed:', err);
@@ -510,8 +498,8 @@ export const useStore = create<AppState>((set, get) => {
         quantity: 1,
         frequentOrders: [],
       });
-      const emp = get().selectedEmployee;
-      if (emp && restId) {
+      const emp = get().selectedEmployee.trim();
+      if (emp && restId && get().employees.includes(emp)) {
         get().fetchFrequentOrders(emp, restId);
       }
     },
@@ -562,7 +550,11 @@ export const useStore = create<AppState>((set, get) => {
 
     submitOrder: async () => {
       const state = get();
-      if (!state.selectedEmployee || !state.selectedRestaurant || !state.selectedItem) {
+      if (
+        !state.selectedEmployee ||
+        !state.selectedRestaurant ||
+        !state.selectedItem
+      ) {
         return { ok: false, error: '請完整填寫餐點資料' };
       }
 
@@ -576,7 +568,9 @@ export const useStore = create<AppState>((set, get) => {
       let extrasTotal = 0;
       const extrasNames: string[] = [];
       const allExtras: Extra[] =
-        state.menuPayload?.extras.filter((e) => e.restaurantId === state.selectedRestaurant) || [];
+        state.menuPayload?.extras.filter(
+          (e) => e.restaurantId === state.selectedRestaurant,
+        ) || [];
 
       Object.values(state.selectedSingleExtras).forEach((eid) => {
         if (!eid) return;
@@ -587,18 +581,25 @@ export const useStore = create<AppState>((set, get) => {
         }
       });
 
-      const multipleExtrasList: { id: string; name: string; price: number }[] = [];
+      const multipleExtrasList: { id: string; name: string; price: number }[] =
+        [];
       state.selectedExtras.forEach((eid) => {
         const e = allExtras.find((x) => String(x.id) === String(eid));
         if (e) {
-          multipleExtrasList.push({ id: String(e.id), name: e.name, price: e.price });
+          multipleExtrasList.push({
+            id: String(e.id),
+            name: e.name,
+            price: e.price,
+          });
           extrasNames.push(e.name);
         }
       });
 
       const freeCount = getFreeExtrasCount(item.name);
       if (freeCount !== null) {
-        const sortedList = [...multipleExtrasList].sort((a, b) => b.price - a.price);
+        const sortedList = [...multipleExtrasList].sort(
+          (a, b) => b.price - a.price,
+        );
         const freeIds = new Set<string>();
         for (let i = 0; i < Math.min(freeCount, sortedList.length); i++) {
           freeIds.add(sortedList[i].id);
@@ -617,9 +618,11 @@ export const useStore = create<AppState>((set, get) => {
       const totalPrice = (unitPrice + extrasTotal) * state.quantity;
       const noteArr: string[] = [];
       if (state.selectedPortion) noteArr.push(`(${state.selectedPortion})`);
-      if (state.selectedFlavors.length > 0) noteArr.push(`[${state.selectedFlavors.join('/')}]`);
+      if (state.selectedFlavors.length > 0)
+        noteArr.push(`[${state.selectedFlavors.join('/')}]`);
       if (state.note) noteArr.push(state.note);
-      if (extrasNames.length > 0) noteArr.push(`加點:${extrasNames.join('、')}`);
+      if (extrasNames.length > 0)
+        noteArr.push(`加點:${extrasNames.join('、')}`);
 
       const currentRest = state.menuPayload?.restaurants.find(
         (r) => r.id === state.selectedRestaurant,
@@ -652,8 +655,10 @@ export const useStore = create<AppState>((set, get) => {
 
       set({ loading: true });
       try {
-        const fn = httpsCallable(functions, 'submitOrder');
-        await fn(payload);
+        const res = await submitOrderApi(payload, {
+          category: item.category || currentRest?.category || state.selectedCategory,
+          subCategory: item.subCategory || '',
+        });
 
         set({
           selectedRestaurant: '',
@@ -661,12 +666,10 @@ export const useStore = create<AppState>((set, get) => {
           customItemName: '',
           customItemPrice: '',
           quantity: 1,
+          useBalance: false,
           loading: false,
+          ...(res.newBalance !== null ? { balance: res.newBalance } : {}),
         });
-
-        // 刷新資料
-        await get().refreshSummary();
-        await get().setEmployee(state.selectedEmployee);
         return { ok: true };
       } catch (e: any) {
         set({ loading: false });
@@ -674,14 +677,17 @@ export const useStore = create<AppState>((set, get) => {
       }
     },
 
-    // ── Summary ──
+    // ── Summary (輕量當日刷新，不再重讀菜單與員工) ──
 
     refreshSummary: async () => {
       try {
-        const fn = httpsCallable(functions, 'getInitialData');
-        const res: any = await fn({ dateStr: get().date });
-        const d = res.data as InitialData;
-        set({ summary: d.summary, confirmations: d.confirmations, locks: d.locks || {} });
+        const targetDate = get().date || getTodayDateString();
+        const daily = await fetchDailyStateOnce(targetDate);
+        set({
+          summary: daily.summary,
+          confirmations: daily.confirmations,
+          locks: daily.locks,
+        });
       } catch (err) {
         console.error('[refreshSummary] failed:', err);
       }
@@ -692,13 +698,14 @@ export const useStore = create<AppState>((set, get) => {
     savePayment: async (emp, paid, change) => {
       set((state) => ({
         summary: state.summary.map((o) =>
-          o.employee === emp ? { ...o, paidAmount: paid, changeAmount: change } : o
+          o.employee === emp
+            ? { ...o, paidAmount: paid, changeAmount: change }
+            : o,
         ),
       }));
 
       try {
-        const fn = httpsCallable(functions, 'saveEmployeePayment');
-        await fn({
+        await saveEmployeePaymentApi({
           employee: emp,
           paidAmount: paid,
           changeAmount: change,
@@ -713,13 +720,12 @@ export const useStore = create<AppState>((set, get) => {
     setChangeGiven: async (emp, isGiven) => {
       set((state) => ({
         summary: state.summary.map((o) =>
-          o.employee === emp ? { ...o, isChangeGiven: isGiven } : o
+          o.employee === emp ? { ...o, isChangeGiven: isGiven } : o,
         ),
       }));
 
       try {
-        const fn = httpsCallable(functions, 'saveEmployeePayment');
-        await fn({
+        await saveEmployeePaymentApi({
           employee: emp,
           isChangeGiven: isGiven,
           dateString: get().date,
@@ -735,13 +741,15 @@ export const useStore = create<AppState>((set, get) => {
     confirmRestaurant: async (restId) => {
       set({ loading: true });
       try {
-        const fn = httpsCallable(functions, 'confirmRestaurantOrder');
-        await fn({
-          date: get().date,
+        const restCat = get().menuPayload?.restaurants.find(
+          (r) => r.id === restId,
+        )?.category;
+        await confirmRestaurantOrderApi(
+          get().date,
           restId,
-          byName: get().selectedEmployee || '系統',
-        });
-        await get().refreshSummary();
+          get().selectedEmployee || '系統',
+          restCat,
+        );
       } finally {
         set({ loading: false });
       }
@@ -750,12 +758,7 @@ export const useStore = create<AppState>((set, get) => {
     cancelConfirm: async (restId) => {
       set({ loading: true });
       try {
-        const fn = httpsCallable(functions, 'cancelRestaurantConfirmation');
-        await fn({
-          date: get().date,
-          restId,
-        });
-        await get().refreshSummary();
+        await cancelRestaurantConfirmationApi(get().date, restId);
       } finally {
         set({ loading: false });
       }
@@ -766,11 +769,17 @@ export const useStore = create<AppState>((set, get) => {
     deleteOrder: async (orderId) => {
       set({ loading: true });
       try {
-        const fn = httpsCallable(functions, 'deleteOrder');
-        const res: any = await fn({ orderId: String(orderId) });
-        await get().refreshSummary();
+        const res = await deleteOrderApi(String(orderId));
+        if (
+          res.refundedEmployee &&
+          res.refundedEmployee === get().selectedEmployee.trim() &&
+          get().balance !== null &&
+          res.refundAmount
+        ) {
+          set({ balance: (get().balance ?? 0) + res.refundAmount });
+        }
         set({ loading: false });
-        return { message: res.data?.message };
+        return { message: res.message };
       } catch (e: any) {
         set({ loading: false });
         return { message: '刪除失敗: ' + e.message };
@@ -780,21 +789,18 @@ export const useStore = create<AppState>((set, get) => {
     // ── Deposit ──
 
     depositBalance: async (amount) => {
-      const emp = get().selectedEmployee;
+      const emp = get().selectedEmployee.trim();
       if (!emp) return { ok: false, error: '未選擇員工' };
       set({ loading: true });
 
       try {
-        const fn = httpsCallable(functions, 'performDepositCallable');
-        const res: any = await fn({ name: emp, amount });
-        const newBal = Number(res.data);
-
-        // 修正 Bug 8：儲值成功後依然保持 useBalance: false
+        const res = await performDepositApi(emp, amount, get().employees);
         set({
           loading: false,
-          balance: newBal,
+          balance: res.newBalance,
           useBalance: false,
           depositAmount: '',
+          ...(res.updatedEmployees ? { employees: res.updatedEmployees } : {}),
         });
         return { ok: true };
       } catch (err: any) {
@@ -808,13 +814,14 @@ export const useStore = create<AppState>((set, get) => {
     updateNote: async (orderId, newNote) => {
       set((state) => ({
         summary: state.summary.map((o) =>
-          o.id === String(orderId) || o.rowNumber === orderId ? { ...o, note: newNote } : o
+          o.id === String(orderId) || o.rowNumber === orderId
+            ? { ...o, note: newNote }
+            : o,
         ),
       }));
 
       try {
-        const fn = httpsCallable(functions, 'updateOrderNote');
-        await fn({ orderId: String(orderId), newNote });
+        await updateOrderNoteApi(String(orderId), newNote);
         return { ok: true };
       } catch (e: any) {
         await get().refreshSummary();
@@ -829,9 +836,8 @@ export const useStore = create<AppState>((set, get) => {
     fetchFrequentOrders: async (employee, restaurantId) => {
       set({ frequentOrdersLoading: true });
       try {
-        const fn = httpsCallable(functions, 'getFrequentOrders');
-        const res: any = await fn({ employeeName: employee, restaurantId });
-        set({ frequentOrders: res.data || [], frequentOrdersLoading: false });
+        const list = await getFrequentOrdersApi(employee, restaurantId);
+        set({ frequentOrders: list, frequentOrdersLoading: false });
       } catch {
         set({ frequentOrders: [], frequentOrdersLoading: false });
       }
@@ -839,11 +845,10 @@ export const useStore = create<AppState>((set, get) => {
 
     applyFrequentOrder: (fo) => {
       const state = get();
-      // 名稱與餐廳比對
       const item = state.menuPayload?.items.find(
         (i) =>
           (String(i.id) === String(fo.itemId) || i.name === fo.itemName) &&
-          i.restaurantId === state.selectedRestaurant
+          i.restaurantId === state.selectedRestaurant,
       );
       if (!item) return;
 
@@ -860,7 +865,7 @@ export const useStore = create<AppState>((set, get) => {
       let parsedFlavors = defaultFlavor;
       let parsedExtras: string[] = [];
       let parsedSingleExtras: Record<string, string> = {};
-      let remainingNotes: string[] = [];
+      const remainingNotes: string[] = [];
 
       if (fo.note) {
         const parts = fo.note.split(/;\s*/);
@@ -889,14 +894,16 @@ export const useStore = create<AppState>((set, get) => {
               .filter(Boolean);
             const allExtras =
               state.menuPayload?.extras.filter(
-                (e) => e.restaurantId === state.selectedRestaurant
+                (e) => e.restaurantId === state.selectedRestaurant,
               ) || [];
 
             names.forEach((name) => {
               const matchedExtra = allExtras.find((e) => e.name === name);
               if (matchedExtra) {
                 if (matchedExtra.type === 'single') {
-                  parsedSingleExtras[matchedExtra.group] = String(matchedExtra.id);
+                  parsedSingleExtras[matchedExtra.group] = String(
+                    matchedExtra.id,
+                  );
                 } else {
                   parsedExtras.push(String(matchedExtra.id));
                 }
@@ -924,15 +931,13 @@ export const useStore = create<AppState>((set, get) => {
     lockCategoryRestaurant: async (category, restaurantId) => {
       set({ loading: true });
       try {
-        const fn = httpsCallable(functions, 'lockCategoryRestaurant');
-        const res: any = await fn({
-          date: get().date,
+        await lockCategoryRestaurantApi(
+          get().date,
           category,
           restaurantId,
-          lockedBy: get().selectedEmployee,
-        });
-        set({ locks: res.data?.locks || {}, loading: false });
-        await get().refreshSummary();
+          get().selectedEmployee,
+        );
+        set({ loading: false });
         return { ok: true };
       } catch (e: any) {
         set({ loading: false });
@@ -943,13 +948,8 @@ export const useStore = create<AppState>((set, get) => {
     unlockCategory: async (category) => {
       set({ loading: true });
       try {
-        const fn = httpsCallable(functions, 'unlockCategory');
-        const res: any = await fn({
-          date: get().date,
-          category,
-        });
-        set({ locks: res.data?.locks || {}, loading: false, selectedRestaurant: '' });
-        await get().refreshSummary();
+        await unlockCategoryApi(get().date, category);
+        set({ loading: false, selectedRestaurant: '' });
         return { ok: true };
       } catch (e: any) {
         set({ loading: false });
@@ -969,11 +969,14 @@ export const useStore = create<AppState>((set, get) => {
       } catch (err: any) {
         let msg = err.message || 'Google 登入失敗';
         if (err.code === 'auth/popup-closed-by-user') {
-          msg = '登入視窗已關閉或取消。若非您主動關閉，可能是瀏覽器阻擋了彈窗或第三方 Cookie，建議點擊下方「改用網頁重新導向登入」或使用 Email 登入。';
+          msg =
+            '登入視窗已關閉或取消。若非您主動關閉，可能是瀏覽器阻擋了彈窗或第三方 Cookie，建議點擊下方「改用網頁重新導向登入」或使用 Email 登入。';
         } else if (err.code === 'auth/popup-blocked') {
-          msg = '瀏覽器封鎖了彈出式登入視窗，請允許本網站的彈出視窗，或點擊下方「改用網頁重新導向登入」。';
+          msg =
+            '瀏覽器封鎖了彈出式登入視窗，請允許本網站的彈出視窗，或點擊下方「改用網頁重新導向登入」。';
         } else if (err.code === 'auth/unauthorized-domain') {
-          msg = '當前網址未加入 Firebase 授權網域 (Authorized Domains)！請至 Firebase Console > Authentication > Settings 新增。';
+          msg =
+            '當前網址未加入 Firebase 授權網域 (Authorized Domains)！請至 Firebase Console > Authentication > Settings 新增。';
         } else if (err.code === 'auth/cancelled-popup-request') {
           msg = '已開啟新的登入請求，前一個視窗已關閉。';
         }
@@ -1020,9 +1023,8 @@ export const useStore = create<AppState>((set, get) => {
         return;
       }
       try {
-        const fn = httpsCallable(functions, 'getUserRoleCallable');
-        const res: any = await fn({ name: emp });
-        set({ userRole: res.data === 'admin' ? 'admin' : 'user' });
+        const role = await getUserRoleApi(emp, null);
+        set({ userRole: role });
       } catch {
         set({ userRole: 'user' });
       }
@@ -1031,50 +1033,41 @@ export const useStore = create<AppState>((set, get) => {
     loadAdminData: async () => {
       set({ adminLoading: true });
       try {
-        let allRests: Restaurant[] = [];
-        try {
-          const { collection, getDocs } = await import('firebase/firestore');
-          const restSnap = await getDocs(collection(db, 'restaurants'));
-          allRests = restSnap.docs.map((d) => {
-            const dat = d.data();
-            return {
-              id: d.id,
-              name: dat.name || '',
-              category: dat.category || '正餐',
-              telephone: dat.telephone || '',
-              isActive: dat.isActive !== false,
-              sweetnessOptions: dat.sweetnessOptions || null,
-              iceOptions: dat.iceOptions || null,
-              createdAt: dat.createdAt || '',
-            };
-          });
-        } catch (err) {
-          console.warn('Direct restaurant fetch in loadAdminData failed:', err);
-        }
-
-        const fn = httpsCallable(functions, 'getAdminData');
-        const res: any = await fn({ adminName: get().selectedEmployee });
+        const raw = await readFullMenuFromCollections();
+        const filtered = filterActiveMenuForDate(
+          raw,
+          get().date || getTodayDateString(),
+        );
         set({
-          adminData: res.data,
-          allRestaurants: allRests.length > 0 ? allRests : (res.data?.menuPayload?.restaurants || get().allRestaurants),
+          adminData: {
+            menuPayload: filtered.menuPayload,
+            specialPrices: filtered.menuPayload.specialPrices || [],
+          },
+          allRestaurants: raw.allRestaurants,
+          newItemDisplayDays: raw.newItemDisplayDays,
           adminLoading: false,
         });
       } catch (e) {
+        console.error('[loadAdminData] failed:', e);
         set({ adminLoading: false });
       }
     },
 
-    adminAddItem: async (data) => {
-      set({ adminLoading: true });
+    syncCatalogCache: async () => {
+      await applyRebuiltCatalog();
+    },
+
+    adminAddItem: async (data, opts) => {
+      if (!opts?.skipSync) set({ adminLoading: true });
       try {
-        const fn = httpsCallable(functions, 'addMenuItem');
-        await fn({ ...data, adminName: get().selectedEmployee });
-        set({ adminLoading: false });
-        await get().loadAdminData();
-        await get().init(get().date);
+        await addOrUpdateMenuItemApi(data);
+        if (!opts?.skipSync) {
+          await applyRebuiltCatalog();
+          set({ adminLoading: false });
+        }
         return { ok: true };
       } catch (e: any) {
-        set({ adminLoading: false });
+        if (!opts?.skipSync) set({ adminLoading: false });
         return { ok: false, error: e.message };
       }
     },
@@ -1082,12 +1075,10 @@ export const useStore = create<AppState>((set, get) => {
     adminAddRestaurant: async (data) => {
       set({ adminLoading: true });
       try {
-        const fn = httpsCallable(functions, 'addRestaurant');
-        const res: any = await fn({ ...data, adminName: get().selectedEmployee });
+        const restaurantId = await addRestaurantApi(data);
+        await applyRebuiltCatalog();
         set({ adminLoading: false });
-        await get().loadAdminData();
-        await get().init(get().date);
-        return { ok: true, restaurantId: res.data?.restaurantId };
+        return { ok: true, restaurantId };
       } catch (e: any) {
         set({ adminLoading: false });
         return { ok: false, error: e.message };
@@ -1097,11 +1088,9 @@ export const useStore = create<AppState>((set, get) => {
     adminUpdateRestaurant: async (data) => {
       set({ adminLoading: true });
       try {
-        const fn = httpsCallable(functions, 'updateRestaurant');
-        await fn({ ...data, adminName: get().selectedEmployee });
+        await updateRestaurantApi(data);
+        await applyRebuiltCatalog();
         set({ adminLoading: false });
-        await get().loadAdminData();
-        await get().init(get().date);
         return { ok: true };
       } catch (e: any) {
         set({ adminLoading: false });
@@ -1112,16 +1101,9 @@ export const useStore = create<AppState>((set, get) => {
     adminToggleRestaurantActive: async (restaurantId, isActive) => {
       set({ adminLoading: true });
       try {
-        const fn = httpsCallable(functions, 'toggleRestaurantActive');
-        await fn({ restaurantId, isActive, adminName: get().selectedEmployee });
-        set((state) => ({
-          allRestaurants: state.allRestaurants.map((r) =>
-            r.id === restaurantId ? { ...r, isActive } : r
-          ),
-          adminLoading: false,
-        }));
-        await get().loadAdminData();
-        await get().init(get().date);
+        await toggleRestaurantActiveApi(restaurantId, isActive);
+        await applyRebuiltCatalog();
+        set({ adminLoading: false });
         return { ok: true };
       } catch (e: any) {
         set({ adminLoading: false });
@@ -1132,11 +1114,9 @@ export const useStore = create<AppState>((set, get) => {
     adminUpdateItem: async (data) => {
       set({ adminLoading: true });
       try {
-        const fn = httpsCallable(functions, 'updateMenuItem');
-        await fn({ ...data, adminName: get().selectedEmployee });
+        await addOrUpdateMenuItemApi(data);
+        await applyRebuiltCatalog();
         set({ adminLoading: false });
-        await get().loadAdminData();
-        await get().init(get().date);
         return { ok: true };
       } catch (e: any) {
         set({ adminLoading: false });
@@ -1147,11 +1127,9 @@ export const useStore = create<AppState>((set, get) => {
     adminDeactivateItem: async (restaurantId, itemId) => {
       set({ adminLoading: true });
       try {
-        const fn = httpsCallable(functions, 'deactivateMenuItem');
-        await fn({ restaurantId, itemId, adminName: get().selectedEmployee });
+        await setMenuItemActiveApi(restaurantId, itemId, false);
+        await applyRebuiltCatalog();
         set({ adminLoading: false });
-        await get().loadAdminData();
-        await get().init(get().date);
         return { ok: true };
       } catch (e: any) {
         set({ adminLoading: false });
@@ -1162,11 +1140,9 @@ export const useStore = create<AppState>((set, get) => {
     adminReactivateItem: async (restaurantId, itemId) => {
       set({ adminLoading: true });
       try {
-        const fn = httpsCallable(functions, 'reactivateMenuItem');
-        await fn({ restaurantId, itemId, adminName: get().selectedEmployee });
+        await setMenuItemActiveApi(restaurantId, itemId, true);
+        await applyRebuiltCatalog();
         set({ adminLoading: false });
-        await get().loadAdminData();
-        await get().init(get().date);
         return { ok: true };
       } catch (e: any) {
         set({ adminLoading: false });
@@ -1177,11 +1153,13 @@ export const useStore = create<AppState>((set, get) => {
     adminApplyChanges: async (restaurantId, changes) => {
       set({ adminLoading: true });
       try {
-        const fn = httpsCallable(functions, 'applyMenuChanges');
-        await fn({ restaurantId, changes, adminName: get().selectedEmployee });
+        await applyMenuChangesApi(
+          restaurantId,
+          changes as Array<Record<string, any>>,
+          get().allRestaurants,
+        );
+        await applyRebuiltCatalog();
         set({ adminLoading: false });
-        await get().loadAdminData();
-        await get().init(get().date);
         return { ok: true };
       } catch (e: any) {
         set({ adminLoading: false });
@@ -1192,11 +1170,17 @@ export const useStore = create<AppState>((set, get) => {
     adminSetSpecialPrice: async (data) => {
       set({ adminLoading: true });
       try {
-        const fn = httpsCallable(functions, 'setSpecialPrice');
-        await fn({ ...data, adminName: get().selectedEmployee });
+        const itemId = String(data.itemId || '');
+        const restId = String(data.restaurantId || '');
+        const matchedItem = get().menuPayload?.items.find(
+          (i) => i.id === itemId && i.restaurantId === restId,
+        );
+        await setSpecialPriceApi({
+          ...(data as any),
+          itemName: String(data.itemName || matchedItem?.name || ''),
+        });
+        await applyRebuiltCatalog();
         set({ adminLoading: false });
-        await get().loadAdminData();
-        await get().init(get().date);
         return { ok: true };
       } catch (e: any) {
         set({ adminLoading: false });
@@ -1207,11 +1191,9 @@ export const useStore = create<AppState>((set, get) => {
     adminRemoveSpecialPrice: async (restaurantId, itemId, portionName) => {
       set({ adminLoading: true });
       try {
-        const fn = httpsCallable(functions, 'removeSpecialPrice');
-        await fn({ restaurantId, itemId, portionName, adminName: get().selectedEmployee });
+        await removeSpecialPriceApi(restaurantId, itemId, portionName);
+        await applyRebuiltCatalog();
         set({ adminLoading: false });
-        await get().loadAdminData();
-        await get().init(get().date);
         return { ok: true };
       } catch (e: any) {
         set({ adminLoading: false });
@@ -1221,8 +1203,8 @@ export const useStore = create<AppState>((set, get) => {
 
     adminUpdateNewItemDisplayDays: async (days) => {
       try {
-        const fn = httpsCallable(functions, 'updateNewItemDisplayDays');
-        await fn({ days, adminName: get().selectedEmployee });
+        await updateNewItemDisplayDaysApi(days);
+        await applyRebuiltCatalog();
         set({ newItemDisplayDays: days });
         return { ok: true };
       } catch (e: any) {
@@ -1230,11 +1212,10 @@ export const useStore = create<AppState>((set, get) => {
       }
     },
 
-    adminAddExtra: async (data) => {
-      set({ adminLoading: true });
+    adminAddExtra: async (data, opts) => {
+      if (!opts?.skipSync) set({ adminLoading: true });
       try {
-        const fn = httpsCallable(functions, 'addMenuItem');
-        await fn({
+        await addOrUpdateMenuItemApi({
           restaurantId: data.restaurantId,
           itemName: data.name,
           price: data.price,
@@ -1242,14 +1223,14 @@ export const useStore = create<AppState>((set, get) => {
           extraGroup: data.group || '加點',
           extraType: data.type || 'extra',
           category: '加點',
-          adminName: get().selectedEmployee,
         });
-        set({ adminLoading: false });
-        await get().loadAdminData();
-        await get().init(get().date);
+        if (!opts?.skipSync) {
+          await applyRebuiltCatalog();
+          set({ adminLoading: false });
+        }
         return { ok: true };
       } catch (e: any) {
-        set({ adminLoading: false });
+        if (!opts?.skipSync) set({ adminLoading: false });
         return { ok: false, error: e.message };
       }
     },
@@ -1257,8 +1238,7 @@ export const useStore = create<AppState>((set, get) => {
     adminUpdateExtra: async (data) => {
       set({ adminLoading: true });
       try {
-        const fn = httpsCallable(functions, 'updateMenuItem');
-        await fn({
+        await addOrUpdateMenuItemApi({
           restaurantId: data.restaurantId,
           itemId: data.id,
           itemName: data.name,
@@ -1266,73 +1246,35 @@ export const useStore = create<AppState>((set, get) => {
           isExtra: true,
           extraGroup: data.group,
           extraType: data.type,
-          adminName: get().selectedEmployee,
         });
+        await applyRebuiltCatalog();
         set({ adminLoading: false });
-        await get().loadAdminData();
-        await get().init(get().date);
         return { ok: true };
       } catch (e: any) {
-        // Fallback: 直接更新 Firestore 集合
-        try {
-          const { doc, updateDoc } = await import('firebase/firestore');
-          const ref = doc(db, 'menuItems', data.id);
-          const updatePayload: Record<string, any> = {};
-          if (data.restaurantId) updatePayload.restaurantId = data.restaurantId;
-          if (data.name) {
-            updatePayload.itemName = data.name;
-            updatePayload.normalizedName = data.name.trim().toLowerCase();
-          }
-          if (data.price !== undefined) updatePayload.price = Number(data.price);
-          if (data.group !== undefined) updatePayload.extraGroup = data.group;
-          if (data.type) updatePayload.extraType = data.type;
-
-          await updateDoc(ref, updatePayload);
-          set({ adminLoading: false });
-          await get().loadAdminData();
-          await get().init(get().date);
-          return { ok: true };
-        } catch (fallbackErr: any) {
-          set({ adminLoading: false });
-          return { ok: false, error: e.message || fallbackErr.message };
-        }
+        set({ adminLoading: false });
+        return { ok: false, error: e.message };
       }
     },
 
     adminDeleteExtra: async (id, restaurantId) => {
       set({ adminLoading: true });
       try {
-        const fn = httpsCallable(functions, 'deactivateMenuItem');
-        await fn({ restaurantId, itemId: id, adminName: get().selectedEmployee });
+        await setMenuItemActiveApi(restaurantId, id, false);
+        await applyRebuiltCatalog();
         set({ adminLoading: false });
-        await get().loadAdminData();
-        await get().init(get().date);
         return { ok: true };
       } catch (e: any) {
-        // Fallback: 直接在 Firestore 標記停用
-        try {
-          const { doc, updateDoc } = await import('firebase/firestore');
-          const ref = doc(db, 'menuItems', id);
-          await updateDoc(ref, { isActive: false });
-          set({ adminLoading: false });
-          await get().loadAdminData();
-          await get().init(get().date);
-          return { ok: true };
-        } catch (fallbackErr: any) {
-          set({ adminLoading: false });
-          return { ok: false, error: e.message || fallbackErr.message };
-        }
+        set({ adminLoading: false });
+        return { ok: false, error: e.message };
       }
     },
 
     adminUpdateRestaurantCustomOptions: async (data) => {
       set({ adminLoading: true });
       try {
-        const fn = httpsCallable(functions, 'updateRestaurantCustomOptions');
-        await fn({ ...data, adminName: get().selectedEmployee });
+        await updateRestaurantCustomOptionsApi(data);
+        await applyRebuiltCatalog();
         set({ adminLoading: false });
-        await get().loadAdminData();
-        await get().init(get().date);
         return { ok: true };
       } catch (e: any) {
         set({ adminLoading: false });
@@ -1343,12 +1285,10 @@ export const useStore = create<AppState>((set, get) => {
     adminCleanupDuplicates: async (restaurantId) => {
       set({ adminLoading: true });
       try {
-        const fn = httpsCallable(functions, 'cleanupDuplicateMenuItems');
-        const res: any = await fn({ restaurantId, adminName: get().selectedEmployee });
+        const res = await cleanupDuplicateMenuItemsApi(restaurantId);
+        await applyRebuiltCatalog();
         set({ adminLoading: false });
-        await get().loadAdminData();
-        await get().init(get().date);
-        return { ok: true, deletedCount: res.data?.deletedCount || 0 };
+        return { ok: true, deletedCount: res.deletedCount };
       } catch (e: any) {
         set({ adminLoading: false });
         return { ok: false, error: e.message };

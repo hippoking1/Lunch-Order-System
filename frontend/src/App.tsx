@@ -36,6 +36,9 @@ function App() {
 
   useEffect(() => {
     store.init();
+    return () => {
+      store.cleanupRealtime();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

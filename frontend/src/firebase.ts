@@ -1,9 +1,8 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
-import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
 
-// 真實的 Firebase 專案配置 (lunch-order-system-af806)
+// Firebase 專案配置 (lunch-order-system-af806)
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'lunch-order-system-af806.firebaseapp.com',
@@ -16,11 +15,10 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
 
 export const db = getFirestore(app);
-export const functions = getFunctions(app, 'asia-east1');
 export const auth = getAuth(app);
 
 // 若在本地開發環境且指定使用模擬器
 if (import.meta.env.VITE_USE_EMULATOR === 'true') {
-  connectFunctionsEmulator(functions, 'localhost', 5001);
+  connectFirestoreEmulator(db, 'localhost', 8080);
   connectAuthEmulator(auth, 'http://localhost:9099');
 }

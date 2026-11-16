@@ -1,8 +1,111 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.admin == true ||
+        (request.auth.token.email != null &&
+         exists(/databases/$(database)/documents/adminEmails/$(request.auth.token.email.lower())))
+      );
+    }
+
+    // 系統設定與版本戳：公開可讀，管理員可完整寫入；新增員工時僅允許更新 employeesVersion
+    match /meta/appConfig {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['employeesVersion', 'updatedAt'])
+        && request.resource.data.employeesVersion is number
+      );
+    }
+    match /meta/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 聚合快取文件：員工名單允許寫入 names 陣列；菜單快取僅管理員可寫
+    match /catalog/employees {
+      allow read: if true;
+      allow create, update: if isAdmin() || (
+        request.resource.data.names is list
+        && request.resource.data.version is number
+      );
+      allow delete: if isAdmin();
+    }
+    match /catalog/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 餐廳、菜單、份量、特價：公開可讀，僅管理員可寫
+    match /restaurants/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /menuItems/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /itemPortions/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /specialPrices/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 管理員 Email 白名單：僅本人可驗證，禁止前端寫入
+    match /adminEmails/{email} {
+      allow read: if request.auth != null && request.auth.token.email.lower() == email;
+      allow write: if false;
+    }
+
+    // 員工帳戶：支援免登入點餐扣款與儲值，禁止前端提權將 role 改為 admin
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if isAdmin() || (
+        request.resource.data.role == 'user'
+        && request.resource.data.balance is number
+      );
+      allow update: if isAdmin() || (
+        request.resource.data.balance is number
+        && (
+          (!('role' in resource.data) && !('role' in request.resource.data))
+          || request.resource.data.role == resource.data.role
+        )
+      );
+      allow delete: if isAdmin();
+    }
+
+    // 當日點餐、確認狀態、分類鎖定：驗證基本欄位型別
+    match /orders/{orderId} {
+      allow read: if true;
+      allow create: if request.resource.data.date is string
+        && request.resource.data.employeeName is string
+        && request.resource.data.restaurantId is string
+        && request.resource.data.totalPrice is number
+        && request.resource.data.totalPrice >= 0;
+      allow update: if request.resource.data.date is string;
+      allow delete: if true;
+    }
+    match /confirmations/{docId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.date is string
+        && request.resource.data.restaurantId is string;
+      allow delete: if true;
+    }
+    match /categoryLocks/{docId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.date is string
+        && request.resource.data.category is string
+        && request.resource.data.restaurantId is string;
+      allow delete: if true;
     }
   }
 }

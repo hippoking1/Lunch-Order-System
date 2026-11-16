@@ -1,6 +1,6 @@
 # 午餐訂餐系統 (Lifestyle Premium) - 完整部署教學手冊
 
-本手冊指導如何將系統從舊有 Google Apps Script (GAS) 完整搬遷部署至 **GitHub Pages (前端靜態託管) + Firebase (Firestore 資料庫 + Cloud Functions 後端 + Firebase Auth 管理員認證)**。
+本手冊指導如何將系統部署至 **GitHub Pages (前端靜態託管) + Firebase Spark 免費方案 (Firestore 資料庫 + Firebase Auth 管理員認證)**，全系統無需 Blaze 方案或 Cloud Functions，月費為 **$0**。
 
 ---
 
@@ -17,11 +17,11 @@
 
 ## 1. 前置準備與 Firebase 專案設定
 
-### 步驟 1.1：建立專案與升級 Blaze
+### 步驟 1.1：建立專案（維持 Spark 免費方案）
 1. 前往 [Firebase Console](https://console.firebase.google.com/)。
 2. 點擊 **「新增專案」**，專案名稱輸入：`Lunch-Order-system`（或自訂名稱，請記住專案 ID）。
 3. Google Analytics 可視需求開啟或關閉。
-4. 專案建立完成後，左下角升級計費方案至 **Blaze (隨用隨付)** 方案（每月享有 200 萬次免費調用額度，訂餐系統實際使用量月費為 $0）。
+4. 專案維持 **Spark (免費方案)** 即可（無需升級 Blaze、無需綁定信用卡），搭配本專案的 `catalog/menuBundle` 聚合快取設計，每日 Firestore 讀取遠低於 50,000 次免費額度。
 
 ### 步驟 1.2：啟用 Firestore Database
 1. 左側選單進入 **「建構 (Build)」>「Firestore Database」**。
@@ -75,7 +75,7 @@
 
 ---
 
-## 3. 部署 Firebase Cloud Functions 後端
+## 3. 部署 Firestore 安全規則、索引與建立聚合快取
 
 ### 步驟 3.1：安裝 Firebase CLI 並登入
 ```bash
@@ -90,13 +90,12 @@ firebase use --add
 ```
 選擇你建立的 `Lunch-Order-system` 專案，別名輸入 `default`。
 
-### 步驟 3.3：部署 Functions 與 Firestore 索引/規則
+### 步驟 3.3：建立聚合快取與部署 Firestore 規則/索引
 ```bash
-cd firebase
-firebase deploy --only firestore:rules,firestore:indexes,functions
-cd ..
+node scripts/build-catalog-cache.mjs
+firebase deploy --only firestore:rules,firestore:indexes
 ```
-*部署完成後，所有的點餐 Callable API 以及 Cloud Scheduler 每日定時過期特價/限定商品任務即自動上線啟用！*
+*部署完成後，前端即自動透過 `meta/appConfig` 版本檢查與 `catalog/menuBundle` 快取載入菜單，並對當日訂單使用 `onSnapshot` 即時同步！*
 
 ---
 
@@ -144,10 +143,8 @@ cd ..
    - 方式 A (Google 登入)：直接在網站後台登入頁點擊「使用 Google 帳號一鍵登入」。
    - 方式 B (Email/密碼)：在 Firebase Console > **Authentication** > **Users** > 點擊「Add user」手動新增管理員 Email 與密碼。
 2. **賦予管理員權限**：
-   - 開啟 Firebase Console > **Firestore Database** > `users` 集合。
-   - 找到對應的員工文件（或以管理員 Email / UID 建立文件），設定欄位：
-     - `role`: `"admin"`
-     - `email`: `"你的管理員Email"`
+   - 開啟 Firebase Console > **Firestore Database** > `users` 集合，找到對應員工文件設定 `role: "admin"` 與 `email`。
+   - 並在 `adminEmails` 集合建立以 **小寫 Email** 為文件 ID 的文件（例如 `admin@example.com`），內容填入 `{ role: "admin", name: "姓名" }`（供 `firestore.rules` 驗證寫入權限；亦可執行 `node scripts/build-catalog-cache.mjs` 自動同步）。
 3. 進入前台網頁，點擊右上角 **「⚙️ 後台管理」**，使用該帳號登入即可存取完整菜單管理面板！
 
 ---
