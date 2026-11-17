@@ -1,21 +1,43 @@
 import { useEffect, useState } from 'react';
 import classNames from 'classnames';
-import { Loader2, LogIn, LogOut, ShieldCheck, Mail, Lock, ExternalLink } from 'lucide-react';
+import {
+  Loader2,
+  LogIn,
+  LogOut,
+  ShieldCheck,
+  Mail,
+  Lock,
+  ExternalLink,
+  Store,
+  ListChecks,
+  FileText,
+  Tag,
+  Sparkles,
+  Trash2,
+} from 'lucide-react';
 import { useStore } from '../../store';
 import TextMenuImporter from './TextMenuImporter';
 import MenuItemTable from './MenuItemTable';
 import SpecialPricePanel from './SpecialPricePanel';
 import LimitedItemPanel from './LimitedItemPanel';
 import RestaurantManager from './RestaurantManager';
+import OrderCleanupPanel from './OrderCleanupPanel';
 
-type AdminTab = 'restaurants' | 'items' | 'import' | 'special' | 'limited';
+type AdminTab =
+  | 'restaurants'
+  | 'items'
+  | 'import'
+  | 'special'
+  | 'limited'
+  | 'cleanup';
 
-const ADMIN_TABS: { key: AdminTab; label: string; emoji: string }[] = [
-  { key: 'restaurants', label: '餐廳管理', emoji: '🏪' },
-  { key: 'items', label: '品項管理', emoji: '📊' },
-  { key: 'import', label: '文字匯入', emoji: '📝' },
-  { key: 'special', label: '特價管理', emoji: '💰' },
-  { key: 'limited', label: '限定商品', emoji: '🌸' },
+const ADMIN_TABS: { key: AdminTab; label: string; icon: typeof Store }[] = [
+  { key: 'restaurants', label: '餐廳管理', icon: Store },
+  { key: 'items', label: '品項管理', icon: ListChecks },
+  { key: 'import', label: '文字匯入', icon: FileText },
+  { key: 'special', label: '特價管理', icon: Tag },
+  { key: 'limited', label: '限定商品', icon: Sparkles },
+  { key: 'cleanup', label: '紀錄清理', icon: Trash2 },
 ];
 
 export default function AdminPanel() {
@@ -41,7 +63,6 @@ export default function AdminPanel() {
     }
   }, [adminUser, loadAdminData]);
 
-  // 處理 Google 彈窗登入
   const handleGoogleLogin = async () => {
     setAuthError('');
     setSubmittingAuth(true);
@@ -52,7 +73,6 @@ export default function AdminPanel() {
     }
   };
 
-  // 處理 Google 重新導向登入 (免開彈窗，解決跨網域、第三方 Cookie 與手機彈窗問題)
   const handleGoogleRedirectLogin = async () => {
     setAuthError('');
     setRedirecting(true);
@@ -64,7 +84,6 @@ export default function AdminPanel() {
     }
   };
 
-  // 處理 Email 登入
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
@@ -80,98 +99,142 @@ export default function AdminPanel() {
     }
   };
 
-  // 未登入 Firebase Auth 時顯示驗證介面
   if (!adminUser) {
     return (
-      <div className="admin-panel animate-fade-in flex flex-col items-center justify-center" style={{ minHeight: '60vh' }}>
-        <div className="card" style={{ maxWidth: 440, width: '100%', padding: '32px 28px', border: '1px solid var(--glass-border)' }}>
+      <div
+        className="admin-panel animate-fade-in flex flex-col items-center justify-center"
+        style={{ minHeight: '60vh' }}
+      >
+        <div
+          className="card"
+          style={{
+            maxWidth: 440,
+            width: '100%',
+            padding: '28px 24px',
+          }}
+        >
           <div className="flex items-center gap-3 mb-4">
-            <div style={{ background: 'var(--primary-light, rgba(245, 166, 35, 0.15))', padding: 10, borderRadius: 12 }}>
-              <ShieldCheck size={28} style={{ color: 'var(--primary)' }} />
+            <div
+              style={{
+                background: 'var(--primary-muted)',
+                padding: 10,
+                borderRadius: 'var(--radius-sm)',
+              }}
+            >
+              <ShieldCheck size={24} strokeWidth={1.5} style={{ color: 'var(--primary)' }} />
             </div>
             <div>
-              <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>管理員身分認證</h2>
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>請使用 Firebase 管理員帳號登入後台</p>
+              <h2 className="h2">管理員身分認證</h2>
+              <p className="caption">請使用 Firebase 管理員帳號登入後台</p>
             </div>
           </div>
 
           {authError && (
-            <div style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '10px 14px', borderRadius: 8, fontSize: 13, marginBottom: 16 }}>
+            <div
+              className="caption mb-4"
+              style={{
+                background: 'var(--error-muted)',
+                color: 'var(--error)',
+                padding: '10px 12px',
+                borderRadius: 'var(--radius-sm)',
+              }}
+            >
               {authError}
             </div>
           )}
 
-          {/* Google 彈窗登入 */}
           <button
             type="button"
-            className="btn btn-outline w-full flex items-center justify-center gap-2 mb-2"
+            className="btn btn-outline w-full mb-2"
             onClick={handleGoogleLogin}
             disabled={submittingAuth || redirecting}
-            style={{ padding: '12px 16px', fontWeight: 600 }}
           >
-            {submittingAuth ? <Loader2 size={18} className="animate-spin" /> : <LogIn size={18} />}
-            使用 Google 帳號一鍵登入
+            {submittingAuth ? (
+              <Loader2 size={16} strokeWidth={1.5} className="animate-spin" />
+            ) : (
+              <LogIn size={16} strokeWidth={1.5} />
+            )}
+            使用 Google 帳號登入
           </button>
 
-          {/* Google 重新導向登入 (免彈窗備案，適合手機或受限制瀏覽器) */}
           <button
             type="button"
-            className="btn btn-ghost w-full flex items-center justify-center gap-2 mb-4"
+            className="btn btn-ghost w-full mb-4"
             onClick={handleGoogleRedirectLogin}
             disabled={submittingAuth || redirecting}
-            style={{ fontSize: 13, padding: '7px 12px', opacity: 0.85, border: '1px dashed var(--glass-border)' }}
-            title="若彈窗被瀏覽器封鎖或自動關閉，可使用此按鈕進行全頁跳轉驗證"
+            style={{ fontSize: 13, border: '1px dashed var(--divider-strong)' }}
           >
-            {redirecting ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
-            改用網頁重新導向登入 (免開彈窗)
+            {redirecting ? (
+              <Loader2 size={14} strokeWidth={1.5} className="animate-spin" />
+            ) : (
+              <ExternalLink size={14} strokeWidth={1.5} />
+            )}
+            改用網頁重新導向登入（免彈窗）
           </button>
 
-          <div className="flex items-center gap-2 mb-4" style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-            <div style={{ flex: 1, height: 1, background: 'var(--glass-border)' }} />
+          <div className="flex items-center gap-2 mb-4 label">
+            <div style={{ flex: 1, height: 1, background: 'var(--divider)' }} />
             <span>或使用 Email 登入</span>
-            <div style={{ flex: 1, height: 1, background: 'var(--glass-border)' }} />
+            <div style={{ flex: 1, height: 1, background: 'var(--divider)' }} />
           </div>
 
-          {/* Email 密碼登入 */}
           <form onSubmit={handleEmailLogin} className="flex flex-col gap-3">
-            <div className="flex items-center gap-2" style={{ background: 'var(--bg-card)', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--glass-border)' }}>
-              <Mail size={16} style={{ color: 'var(--text-secondary)' }} />
+            <div
+              className="flex items-center gap-2"
+              style={{
+                background: 'var(--surface)',
+                padding: '0 12px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--divider-strong)',
+              }}
+            >
+              <Mail size={16} strokeWidth={1.5} style={{ color: 'var(--text-muted)' }} />
               <input
                 type="email"
                 placeholder="管理員 Email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                style={{ background: 'transparent', border: 'none', color: 'inherit', width: '100%', outline: 'none', fontSize: 14 }}
+                style={{ background: 'transparent', border: 'none', boxShadow: 'none' }}
               />
             </div>
-            <div className="flex items-center gap-2" style={{ background: 'var(--bg-card)', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--glass-border)' }}>
-              <Lock size={16} style={{ color: 'var(--text-secondary)' }} />
+            <div
+              className="flex items-center gap-2"
+              style={{
+                background: 'var(--surface)',
+                padding: '0 12px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--divider-strong)',
+              }}
+            >
+              <Lock size={16} strokeWidth={1.5} style={{ color: 'var(--text-muted)' }} />
               <input
                 type="password"
                 placeholder="密碼"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                style={{ background: 'transparent', border: 'none', color: 'inherit', width: '100%', outline: 'none', fontSize: 14 }}
+                style={{ background: 'transparent', border: 'none', boxShadow: 'none' }}
               />
             </div>
             <button
               type="submit"
-              className="btn btn-primary w-full mt-2 flex items-center justify-center gap-2"
+              className="btn btn-primary w-full mt-2"
               disabled={submittingAuth}
-              style={{ padding: '10px 16px' }}
             >
-              {submittingAuth ? <Loader2 size={16} className="animate-spin" /> : '登入後台'}
+              {submittingAuth ? (
+                <Loader2 size={16} strokeWidth={1.5} className="animate-spin" />
+              ) : (
+                '登入後台'
+              )}
             </button>
           </form>
 
           <div className="mt-4 text-center">
             <button
               type="button"
-              className="btn btn-sm"
-              style={{ color: 'var(--text-secondary)', background: 'transparent', fontSize: 13 }}
+              className="btn btn-ghost btn-sm"
               onClick={() => useStore.getState().setOption('activeTab', 'order')}
             >
-              ← 返回一般點餐介面
+              返回訂餐介面
             </button>
           </div>
         </div>
@@ -181,28 +244,25 @@ export default function AdminPanel() {
 
   return (
     <div className="admin-panel animate-fade-in">
-      <div className="admin-header flex justify-between items-center mb-4">
+      <div className="admin-header flex justify-between items-center flex-wrap gap-3 mb-4">
         <div>
-          <div className="app-brand">Menu Management</div>
-          <h1
-            className="display-title"
-            style={{ fontSize: 'clamp(28px, 4vw, 44px)' }}
-          >
-            菜單管理.
-          </h1>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+          <div className="label">
             目前管理員：{adminUser.email || adminUser.displayName || '已登入'}
           </div>
+          <h1 className="display-title">菜單與資料管理</h1>
         </div>
         <div className="flex items-center gap-2">
           <button
-            className="btn btn-outline btn-sm flex items-center gap-1"
+            type="button"
+            className="btn btn-outline btn-sm"
             onClick={logoutAdmin}
             title="登出管理員身分"
           >
-            <LogOut size={14} /> 登出
+            <LogOut size={14} strokeWidth={1.5} />
+            登出
           </button>
           <button
+            type="button"
             className="btn btn-primary btn-sm"
             onClick={() => useStore.getState().setOption('activeTab', 'order')}
           >
@@ -213,24 +273,24 @@ export default function AdminPanel() {
 
       {/* Sub-tabs */}
       <div className="segmented-control mb-4">
-        {ADMIN_TABS.map(({ key, label, emoji }) => (
+        {ADMIN_TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
+            type="button"
             className={classNames('segmented-item', { active: subTab === key })}
             onClick={() => setSubTab(key)}
           >
-            {emoji} {label}
+            <Icon size={16} strokeWidth={1.5} />
+            {label}
           </button>
         ))}
       </div>
 
       {adminLoading && (
-        <div
-          className="flex justify-center items-center"
-          style={{ padding: 40 }}
-        >
+        <div className="flex justify-center items-center" style={{ padding: 40 }}>
           <Loader2
-            size={32}
+            size={28}
+            strokeWidth={1.5}
             className="animate-spin"
             style={{ color: 'var(--primary)' }}
           />
@@ -251,10 +311,21 @@ export default function AdminPanel() {
               }}
             />
           )}
-          {subTab === 'items' && <MenuItemTable initialRestaurantId={targetRestaurantId} key={targetRestaurantId} />}
-          {subTab === 'import' && <TextMenuImporter initialRestaurantId={targetRestaurantId} key={targetRestaurantId} />}
+          {subTab === 'items' && (
+            <MenuItemTable
+              initialRestaurantId={targetRestaurantId}
+              key={targetRestaurantId}
+            />
+          )}
+          {subTab === 'import' && (
+            <TextMenuImporter
+              initialRestaurantId={targetRestaurantId}
+              key={targetRestaurantId}
+            />
+          )}
           {subTab === 'special' && <SpecialPricePanel />}
           {subTab === 'limited' && <LimitedItemPanel />}
+          {subTab === 'cleanup' && <OrderCleanupPanel />}
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback } from 'react';
 import classNames from 'classnames';
-import { Search, Sparkles, Zap, Loader2 } from 'lucide-react';
+import { Search, Flame, Zap, Loader2, UtensilsCrossed } from 'lucide-react';
 import { useStore, isDrinkItem } from '../../store';
 import type { MenuItem, FrequentOrderEntry } from '../../types';
 
@@ -41,7 +41,9 @@ export default function MenuItemGrid() {
   }, [menuPayload, selectedRestaurant, search]);
 
   const specialPrices = useMemo(() => {
-    if (!menuPayload?.specialPrices) return new Map<string, { specialPrice: number; label: string; originalPrice: number }>();
+    if (!menuPayload?.specialPrices) {
+      return new Map<string, { specialPrice: number; label: string; originalPrice: number }>();
+    }
     const map = new Map<string, { specialPrice: number; label: string; originalPrice: number }>();
     menuPayload.specialPrices.forEach((sp) => {
       map.set(`${sp.restaurantId}-${sp.itemId}`, {
@@ -53,6 +55,8 @@ export default function MenuItemGrid() {
     return map;
   }, [menuPayload]);
 
+  const FEATURED_KEY = '__FEATURED__';
+
   const groupedItems = useMemo(() => {
     const map: Record<string, MenuItem[]> = {};
     const specialOrLimited: MenuItem[] = [];
@@ -62,7 +66,7 @@ export default function MenuItemGrid() {
     menuItems.forEach((m) => {
       const isSpecial = specialPrices.has(`${m.restaurantId}-${m.id}`);
       const isLimited = !!m.limitedType;
-      const isNew = !!(m.createdAt && (now - new Date(m.createdAt).getTime()) < msThreshold);
+      const isNew = !!(m.createdAt && now - new Date(m.createdAt).getTime() < msThreshold);
 
       if (isSpecial || isLimited || isNew) {
         specialOrLimited.push(m);
@@ -75,24 +79,24 @@ export default function MenuItemGrid() {
 
     const finalMap: Record<string, MenuItem[]> = {};
     if (specialOrLimited.length > 0) {
-      // Remove duplicates if any
-      const uniqueFeatured = Array.from(new Map(specialOrLimited.map((item) => [item.id, item])).values());
-      finalMap['🔥 優先推薦 & 期間限定'] = uniqueFeatured;
+      const uniqueFeatured = Array.from(
+        new Map(specialOrLimited.map((item) => [item.id, item])).values(),
+      );
+      finalMap[FEATURED_KEY] = uniqueFeatured;
     }
 
-    // Sort each original group so that specially marked items (期間限定, 新品上市, 店長推薦) appear first
     Object.keys(map).forEach((sub) => {
       const items = [...map[sub]];
       items.sort((a, b) => {
         const aIsSpecial = specialPrices.has(`${a.restaurantId}-${a.id}`);
         const aIsLimited = !!a.limitedType;
-        const aIsNew = !!(a.createdAt && (now - new Date(a.createdAt).getTime()) < msThreshold);
-        const aPriority = (aIsLimited || aIsSpecial || aIsNew) ? 0 : 1;
+        const aIsNew = !!(a.createdAt && now - new Date(a.createdAt).getTime() < msThreshold);
+        const aPriority = aIsLimited || aIsSpecial || aIsNew ? 0 : 1;
 
         const bIsSpecial = specialPrices.has(`${b.restaurantId}-${b.id}`);
         const bIsLimited = !!b.limitedType;
-        const bIsNew = !!(b.createdAt && (now - new Date(b.createdAt).getTime()) < msThreshold);
-        const bPriority = (bIsLimited || bIsSpecial || bIsNew) ? 0 : 1;
+        const bIsNew = !!(b.createdAt && now - new Date(b.createdAt).getTime() < msThreshold);
+        const bPriority = bIsLimited || bIsSpecial || bIsNew ? 0 : 1;
 
         return aPriority - bPriority;
       });
@@ -126,16 +130,60 @@ export default function MenuItemGrid() {
 
   const subKeys = Object.keys(groupedItems);
 
+  const renderPrice = (m: MenuItem) => {
+    const sp = specialPrices.get(`${m.restaurantId}-${m.id}`);
+    if (sp) {
+      return (
+        <span className="option-price">
+          <s className="text-muted" style={{ fontSize: 12 }}>
+            ${sp.originalPrice}
+          </s>{' '}
+          <span style={{ color: 'var(--error)' }}>${sp.specialPrice}</span>
+          {sp.label && (
+            <span className="badge badge-error" style={{ fontSize: 11, marginLeft: 4 }}>
+              {sp.label}
+            </span>
+          )}
+        </span>
+      );
+    }
+    return <span className="option-price">${m.price}</span>;
+  };
+
+  const renderBadges = (m: MenuItem) => {
+    const isNew = !!(
+      m.createdAt && Date.now() - new Date(m.createdAt).getTime() < newItemDisplayDays * 86400000
+    );
+    return (
+      <>
+        {isNew && (
+          <span className="badge-new" style={{ marginLeft: 4 }}>
+            新品
+          </span>
+        )}
+        {m.limitedType && (
+          <span className="badge badge-limited" style={{ fontSize: 11, marginLeft: 4 }}>
+            {m.limitedType}
+          </span>
+        )}
+      </>
+    );
+  };
+
   return (
     <div className="animate-slide-up">
-      <div className="h3 mb-3">🍽️ 選擇餐點</div>
+      <div className="h3 mb-3">
+        <UtensilsCrossed size={16} strokeWidth={1.5} />
+        選擇餐點
+      </div>
 
       {/* Frequent orders */}
       {(frequentOrders.length > 0 || frequentOrdersLoading) && (
         <div className="mb-4">
-          <div className="caption font-semibold mb-2 flex items-center gap-1">
-            <Zap size={14} /> 常用點餐
-            {frequentOrdersLoading && <Loader2 size={12} className="animate-spin" style={{ marginLeft: 4 }} />}
+          <div className="caption mb-2 flex items-center gap-2">
+            <Zap size={14} strokeWidth={1.5} style={{ color: 'var(--primary)' }} />
+            常用點餐
+            {frequentOrdersLoading && <Loader2 size={12} className="animate-spin" />}
           </div>
           <div className="flex flex-col gap-2">
             {frequentOrders.map((fo, idx) => {
@@ -153,17 +201,17 @@ export default function MenuItemGrid() {
                   className="quick-order-card"
                   onClick={() => handleFrequentOrder(fo)}
                 >
-                  <div className="flex-1">
+                  <div className="flex-1" style={{ minWidth: 0 }}>
                     <div className="option-name truncate">{fo.itemName}</div>
                     {detailParts.length > 0 && (
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      <div className="label truncate" style={{ marginTop: 2 }}>
                         {detailParts.join(' · ')}
                       </div>
                     )}
                   </div>
-                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div className="text-right" style={{ flexShrink: 0 }}>
                     <span className="option-price mono">${fo.unitPrice}</span>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>×{fo.count}</div>
+                    <div className="label mono">×{fo.count}</div>
                   </div>
                 </div>
               );
@@ -174,10 +222,10 @@ export default function MenuItemGrid() {
 
       {/* Search bar */}
       <div className="search-bar mb-3">
-        <Search size={16} className="search-icon" />
+        <Search size={16} strokeWidth={1.5} className="search-icon" />
         <input
           type="text"
-          placeholder="搜尋餐點..."
+          placeholder="搜尋餐點"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -187,7 +235,16 @@ export default function MenuItemGrid() {
       {subKeys.map((sub) => (
         <div key={sub} className="mb-4">
           {(sub !== '其他' || subKeys.length > 1) && (
-            <div className="caption font-semibold mb-2">{sub}</div>
+            <div className="caption mb-2 flex items-center gap-1">
+              {sub === FEATURED_KEY ? (
+                <>
+                  <Flame size={14} strokeWidth={1.5} style={{ color: 'var(--primary)' }} />
+                  優先推薦與期間限定
+                </>
+              ) : (
+                sub
+              )}
+            </div>
           )}
           <div className="option-grid">
             {groupedItems[sub].map((m, idx) =>
@@ -208,25 +265,9 @@ export default function MenuItemGrid() {
                   <div className="menu-card-body">
                     <span className="option-name">
                       {m.name}
-                      {!!(m.createdAt && (Date.now() - new Date(m.createdAt).getTime()) < newItemDisplayDays * 86400000) && (
-                        <span className="badge badge-new" style={{ fontSize: 10, marginLeft: 4 }}>🆕 新品</span>
-                      )}
-                      {m.limitedType && <span className="badge badge-limited" style={{ fontSize: 10, marginLeft: 4 }}><Sparkles size={10} style={{ display: 'inline', verticalAlign: -1, marginRight: 2 }} />{m.limitedType}</span>}
+                      {renderBadges(m)}
                     </span>
-                    {(() => {
-                      const sp = specialPrices.get(`${m.restaurantId}-${m.id}`);
-                      if (sp) {
-                        return (
-                          <span className="option-price">
-                            <s style={{ color: 'var(--text-muted)', fontSize: 12 }}>${sp.originalPrice}</s>
-                            {' '}
-                            <span style={{ color: 'var(--error)' }}>${sp.specialPrice}</span>
-                            {sp.label && <span className="badge badge-error" style={{ fontSize: 10, marginLeft: 4 }}>{sp.label}</span>}
-                          </span>
-                        );
-                      }
-                      return <span className="option-price">${m.price}</span>;
-                    })()}
+                    {renderPrice(m)}
                   </div>
                 </div>
               ) : (
@@ -239,25 +280,9 @@ export default function MenuItemGrid() {
                 >
                   <span className="option-name">
                     {m.name}
-                    {!!(m.createdAt && (Date.now() - new Date(m.createdAt).getTime()) < newItemDisplayDays * 86400000) && (
-                      <span className="badge badge-new" style={{ fontSize: 10, marginLeft: 4 }}>🆕 新品</span>
-                    )}
-                    {m.limitedType && <span className="badge badge-limited" style={{ fontSize: 10, marginLeft: 4 }}><Sparkles size={10} style={{ display: 'inline', verticalAlign: -1, marginRight: 2 }} />{m.limitedType}</span>}
+                    {renderBadges(m)}
                   </span>
-                  {(() => {
-                    const sp = specialPrices.get(`${m.restaurantId}-${m.id}`);
-                    if (sp) {
-                      return (
-                        <span className="option-price">
-                          <s style={{ color: 'var(--text-muted)', fontSize: 12 }}>${sp.originalPrice}</s>
-                          {' '}
-                          <span style={{ color: 'var(--error)' }}>${sp.specialPrice}</span>
-                          {sp.label && <span className="badge badge-error" style={{ fontSize: 10, marginLeft: 4 }}>{sp.label}</span>}
-                        </span>
-                      );
-                    }
-                    return <span className="option-price">${m.price}</span>;
-                  })()}
+                  {renderPrice(m)}
                 </div>
               ),
             )}
@@ -267,7 +292,7 @@ export default function MenuItemGrid() {
 
       {/* Custom item input */}
       <hr className="divider" />
-      <div className="caption font-semibold mb-2">自行輸入餐點</div>
+      <div className="caption mb-2">自行輸入餐點</div>
       <div className="flex gap-2 items-center">
         <input
           type="text"
@@ -278,13 +303,18 @@ export default function MenuItemGrid() {
         />
         <input
           type="number"
-          placeholder="單價($)"
-          style={{ width: '120px', flexShrink: 0 }}
+          placeholder="單價"
+          style={{ width: '96px', flexShrink: 0 }}
           value={customItemPrice}
           onChange={(e) => setCustomItemPrice(e.target.value)}
         />
-        <button className="btn btn-outline" style={{ flexShrink: 0 }} onClick={handleCustomItem}>
-          確認並選擇
+        <button
+          type="button"
+          className="btn btn-outline btn-sm"
+          style={{ flexShrink: 0 }}
+          onClick={handleCustomItem}
+        >
+          選擇
         </button>
       </div>
     </div>

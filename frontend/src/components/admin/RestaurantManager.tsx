@@ -286,7 +286,7 @@ export default function RestaurantManager({
               onClick={() => setStatusFilter('active')}
               style={{ fontSize: 13, padding: '6px 12px' }}
             >
-              🟢 上架中 ({activeCount})
+              上架中 ({activeCount})
             </button>
             <button
               type="button"
@@ -296,7 +296,7 @@ export default function RestaurantManager({
               onClick={() => setStatusFilter('inactive')}
               style={{ fontSize: 13, padding: '6px 12px' }}
             >
-              📦 已下架 ({inactiveCount})
+              已下架 ({inactiveCount})
             </button>
             <button
               type="button"
@@ -378,9 +378,9 @@ export default function RestaurantManager({
                   setNewRest({ ...newRest, category: e.target.value as Category })
                 }
               >
-                <option value="正餐">🍱 正餐</option>
-                <option value="飲料">🥤 飲料</option>
-                <option value="甜點">🍰 甜點</option>
+                <option value="正餐">正餐</option>
+                <option value="飲料">飲料</option>
+                <option value="甜點">甜點</option>
               </select>
             </div>
 
@@ -421,13 +421,13 @@ export default function RestaurantManager({
         <div
           className="card animate-slide-up"
           style={{
-            background: 'linear-gradient(135deg, rgba(245, 166, 35, 0.12), rgba(124, 92, 252, 0.12))',
-            border: '1.5px solid var(--primary)',
+            background: 'var(--primary-muted)',
+            border: '1px solid var(--primary)',
             padding: '20px 24px',
           }}
         >
-          <div className="flex items-center gap-2 mb-2" style={{ color: 'var(--primary)', fontWeight: 700 }}>
-            <Sparkles size={20} /> 餐廳「{createdRestInfo.name}」已建立完成！接下來：
+          <div className="flex items-center gap-2 mb-2" style={{ color: 'var(--primary)', fontWeight: 600 }}>
+            <Sparkles size={18} strokeWidth={1.5} /> 餐廳「{createdRestInfo.name}」已建立完成，接下來：
           </div>
           <p style={{ fontSize: 14, color: 'var(--text-primary)', margin: '0 0 16px 0' }}>
             你現在可以為這家新餐廳匯入菜單或新增餐點，請選擇操作方式：
@@ -437,13 +437,13 @@ export default function RestaurantManager({
               className="btn btn-primary flex items-center gap-2"
               onClick={() => onNavigateToImport(createdRestInfo.id)}
             >
-              <FileText size={16} /> 📝 立即文字/CSV匯入菜單
+              <FileText size={16} strokeWidth={1.5} /> 立即文字/CSV匯入菜單
             </button>
             <button
               className="btn btn-outline flex items-center gap-2"
               onClick={() => onNavigateToItems(createdRestInfo.id)}
             >
-              <ListFilter size={16} /> 📋 手動新增菜單品項
+              <ListFilter size={16} strokeWidth={1.5} /> 手動新增菜單品項
             </button>
             <button
               className="btn btn-ghost"
@@ -488,9 +488,9 @@ export default function RestaurantManager({
                       onChange={(e) => setEditForm({ ...editForm, category: e.target.value as Category })}
                       style={{ flex: 1 }}
                     >
-                      <option value="正餐">🍱 正餐</option>
-                      <option value="飲料">🥤 飲料</option>
-                      <option value="甜點">🍰 甜點</option>
+                      <option value="正餐">正餐</option>
+                      <option value="飲料">飲料</option>
+                      <option value="甜點">甜點</option>
                     </select>
                     <input
                       value={editForm.telephone}
@@ -605,9 +605,9 @@ export default function RestaurantManager({
                       className="btn btn-outline btn-xs flex items-center gap-1"
                       onClick={() => handleOpenDrinkOptions(r)}
                       title="自訂此飲料店的甜度與冰塊選項"
-                      style={{ padding: '4px 8px', fontSize: 12, borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                      style={{ padding: '4px 8px', fontSize: 12 }}
                     >
-                      🥤 規格選項
+                      規格選項
                     </button>
                   )}
                 </div>
@@ -704,7 +704,7 @@ export default function RestaurantManager({
             <div className="flex justify-between items-center mb-4">
               <div>
                 <h3 className="h3 flex items-center gap-2" style={{ color: '#ffffff', margin: 0 }}>
-                  🥤 自訂飲料選項規格
+                  自訂飲料選項規格
                 </h3>
                 <p className="caption" style={{ color: 'var(--primary)', fontWeight: 600, margin: '2px 0 0 0' }}>
                   {customizingDrinkRest.name} (飲料店專屬)
@@ -722,9 +722,9 @@ export default function RestaurantManager({
             {/* Sweetness section */}
             <div className="mb-5" style={{ background: 'rgba(255,255,255,0.03)', padding: 16, borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
               <div className="flex justify-between items-center mb-2">
-                <span className="font-semibold text-sm" style={{ color: '#ffffff' }}>🍬 甜度選項列表 ({sweetnessList.length})</span>
+                <span className="font-semibold text-sm" style={{ color: '#ffffff' }}>甜度選項列表 ({sweetnessList.length})</span>
                 <span className="caption" style={{ color: 'var(--text-muted)', fontSize: 11 }}>
-                  可拖曳或點擊 ◀ ▶ 調整順序，✕ 刪除
+                  可拖曳或點擊左右箭頭調整順序，點擊 X 刪除
                 </span>
               </div>
               <div className="flex flex-wrap gap-2 mb-3">
@@ -833,9 +833,9 @@ export default function RestaurantManager({
             {/* Ice section */}
             <div className="mb-5" style={{ background: 'rgba(255,255,255,0.03)', padding: 16, borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
               <div className="flex justify-between items-center mb-2">
-                <span className="font-semibold text-sm" style={{ color: '#ffffff' }}>🧊 冰塊選項列表 ({iceList.length})</span>
+                <span className="font-semibold text-sm" style={{ color: '#ffffff' }}>冰塊選項列表 ({iceList.length})</span>
                 <span className="caption" style={{ color: 'var(--text-muted)', fontSize: 11 }}>
-                  可拖曳或點擊 ◀ ▶ 調整順序，✕ 刪除
+                  可拖曳或點擊左右箭頭調整順序，點擊 X 刪除
                 </span>
               </div>
               <div className="flex flex-wrap gap-2 mb-3">

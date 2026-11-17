@@ -11,6 +11,7 @@ import {
 } from 'firebase/auth';
 import type { Unsubscribe } from 'firebase/firestore';
 import { auth } from './firebase';
+import { LS_LAST_EMPLOYEE_KEY } from './constants';
 import {
   getTodayDateString,
   loadCatalogWithCache,
@@ -42,6 +43,9 @@ import {
   removeSpecialPriceApi,
   updateNewItemDisplayDaysApi,
   cleanupDuplicateMenuItemsApi,
+  previewOrdersInRangeApi,
+  deleteOrdersInRangeApi,
+  type OrdersRangePreview,
 } from './services/firestoreApi';
 import type {
   AdminData,
@@ -56,7 +60,123 @@ import type {
   OrderRecord,
   Restaurant,
   RestaurantTelephone,
+  SpecialPrice,
 } from './types';
+
+// 單一真相來源：計算品項有效單價（含份量與特價）
+export function getEffectiveUnitPrice(
+  item: MenuItem,
+  selectedPortion: string,
+  specialPrices?: SpecialPrice[],
+): { unitPrice: number; originalPrice: number; specialLabel?: string } {
+  let basePrice = item.price;
+  if (selectedPortion && item.portions?.length) {
+    const p = item.portions.find((x) => x.name === selectedPortion);
+    if (p) basePrice = p.price;
+  }
+  const sp = specialPrices?.find(
+    (s) =>
+      s.restaurantId === item.restaurantId &&
+      String(s.itemId) === String(item.id) &&
+      (!s.portionName || s.portionName === selectedPortion),
+  );
+  if (sp) {
+    return {
+      unitPrice: sp.specialPrice,
+      originalPrice: sp.originalPrice || basePrice,
+      specialLabel: sp.label || '特價',
+    };
+  }
+  return { unitPrice: basePrice, originalPrice: basePrice };
+}
+
+// 單一真相來源：計算單筆訂單總價（單價 + 單選/複選加點 + X選Y免費折抵）× 數量
+export function calculateItemPricing(params: {
+  item: MenuItem;
+  selectedPortion: string;
+  selectedSingleExtras: Record<string, string>;
+  selectedExtras: string[];
+  quantity: number;
+  restaurantExtras: Extra[];
+  specialPrices?: SpecialPrice[];
+}): {
+  unitPrice: number;
+  originalPrice: number;
+  specialLabel?: string;
+  extrasTotal: number;
+  extrasNames: string[];
+  totalPrice: number;
+} {
+  const {
+    item,
+    selectedPortion,
+    selectedSingleExtras,
+    selectedExtras,
+    quantity,
+    restaurantExtras,
+    specialPrices,
+  } = params;
+
+  const { unitPrice, originalPrice, specialLabel } = getEffectiveUnitPrice(
+    item,
+    selectedPortion,
+    specialPrices,
+  );
+
+  let extrasTotal = 0;
+  const extrasNames: string[] = [];
+
+  Object.values(selectedSingleExtras).forEach((eid) => {
+    if (!eid) return;
+    const e = restaurantExtras.find((x) => String(x.id) === String(eid));
+    if (e) {
+      extrasTotal += e.price;
+      extrasNames.push(e.name);
+    }
+  });
+
+  const multipleExtrasList: { id: string; name: string; price: number }[] = [];
+  selectedExtras.forEach((eid) => {
+    const e = restaurantExtras.find((x) => String(x.id) === String(eid));
+    if (e) {
+      multipleExtrasList.push({
+        id: String(e.id),
+        name: e.name,
+        price: e.price,
+      });
+      extrasNames.push(e.name);
+    }
+  });
+
+  const freeCount = getFreeExtrasCount(item.name);
+  if (freeCount !== null) {
+    const sortedList = [...multipleExtrasList].sort(
+      (a, b) => b.price - a.price,
+    );
+    const freeIds = new Set<string>();
+    for (let i = 0; i < Math.min(freeCount, sortedList.length); i++) {
+      freeIds.add(sortedList[i].id);
+    }
+    multipleExtrasList.forEach((e) => {
+      if (!freeIds.has(e.id)) {
+        extrasTotal += e.price;
+      }
+    });
+  } else {
+    multipleExtrasList.forEach((e) => {
+      extrasTotal += e.price;
+    });
+  }
+
+  return {
+    unitPrice,
+    originalPrice,
+    specialLabel,
+    extrasTotal,
+    extrasNames,
+    totalPrice: (unitPrice + extrasTotal) * quantity,
+  };
+}
 
 // 解析「X選Y」規則的 Helper 函數
 export function getFreeExtrasCount(itemName: string): number | null {
@@ -280,6 +400,21 @@ interface AppState {
   adminCleanupDuplicates: (
     restaurantId?: string,
   ) => Promise<{ ok: boolean; deletedCount?: number; error?: string }>;
+  adminPreviewOrdersInRange: (
+    startDate: string,
+    endDate: string,
+  ) => Promise<{ ok: boolean; preview?: OrdersRangePreview; error?: string }>;
+  adminDeleteOrdersInRange: (
+    startDate: string,
+    endDate: string,
+    includeDailyMeta?: boolean,
+  ) => Promise<{
+    ok: boolean;
+    deletedOrders?: number;
+    deletedConfirmations?: number;
+    deletedLocks?: number;
+    error?: string;
+  }>;
 }
 
 // ── Realtime Subscription Tracker ─────────────────────
@@ -389,6 +524,19 @@ export const useStore = create<AppState>((set, get) => {
           selectedCategory: defaultCategory,
         });
 
+        // 自動記憶上次訂餐人（若無暫存且該員存在名單內，不自動勾選餘額扣款）
+        const currentEmp = get().selectedEmployee.trim();
+        if (!currentEmp) {
+          try {
+            const savedEmp = localStorage.getItem(LS_LAST_EMPLOYEE_KEY)?.trim();
+            if (savedEmp && catalog.employees.includes(savedEmp)) {
+              void get().setEmployee(savedEmp);
+            }
+          } catch {
+            // ignore storage errors
+          }
+        }
+
         // 切換日期或首次啟動時建立當日即時監聽 (onSnapshot)
         if (!activeDailyUnsubscribe || activeSubscribedDate !== targetDate) {
           if (activeDailyUnsubscribe) {
@@ -412,13 +560,21 @@ export const useStore = create<AppState>((set, get) => {
             onLocks: (locks) => {
               if (get().date === targetDate) {
                 const updates: Partial<AppState> = { locks };
+                let autoLockedRestId = '';
                 if (isFirstLocksSnapshot && !get().selectedRestaurant) {
                   const cat = get().selectedCategory || '正餐';
                   const lockedId = locks[cat]?.restaurantId || '';
-                  if (lockedId) updates.selectedRestaurant = lockedId;
+                  if (lockedId) {
+                    updates.selectedRestaurant = lockedId;
+                    autoLockedRestId = lockedId;
+                  }
                 }
                 isFirstLocksSnapshot = false;
                 set(updates);
+                const emp = get().selectedEmployee.trim();
+                if (autoLockedRestId && emp && get().employees.includes(emp)) {
+                  void get().fetchFrequentOrders(emp, autoLockedRestId);
+                }
               }
             },
             onError: (err) => {
@@ -449,9 +605,28 @@ export const useStore = create<AppState>((set, get) => {
 
     setEmployee: async (emp) => {
       const trimmedEmp = emp.trim();
-      set({ selectedEmployee: emp, balance: null, useBalance: false });
+      set({
+        selectedEmployee: emp,
+        balance: null,
+        useBalance: false,
+        frequentOrders: [],
+      });
+
+      try {
+        if (trimmedEmp) {
+          localStorage.setItem(LS_LAST_EMPLOYEE_KEY, trimmedEmp);
+        } else {
+          localStorage.removeItem(LS_LAST_EMPLOYEE_KEY);
+        }
+      } catch {
+        // ignore storage errors
+      }
 
       if (trimmedEmp && get().employees.includes(trimmedEmp)) {
+        const currentRest = get().selectedRestaurant;
+        if (currentRest) {
+          void get().fetchFrequentOrders(trimmedEmp, currentRest);
+        }
         try {
           const info = await getEmployeeInfoApi(
             trimmedEmp,
@@ -551,71 +726,30 @@ export const useStore = create<AppState>((set, get) => {
     submitOrder: async () => {
       const state = get();
       if (
-        !state.selectedEmployee ||
+        !state.selectedEmployee.trim() ||
         !state.selectedRestaurant ||
         !state.selectedItem
       ) {
-        return { ok: false, error: '請完整填寫餐點資料' };
+        return { ok: false, error: '請先選擇訂餐人與餐點資料' };
       }
 
       const item = state.selectedItem;
-      let unitPrice = item.price;
-      if (state.selectedPortion) {
-        const p = item.portions?.find((x) => x.name === state.selectedPortion);
-        if (p) unitPrice = p.price;
-      }
-
-      let extrasTotal = 0;
-      const extrasNames: string[] = [];
-      const allExtras: Extra[] =
+      const restaurantExtras =
         state.menuPayload?.extras.filter(
           (e) => e.restaurantId === state.selectedRestaurant,
         ) || [];
 
-      Object.values(state.selectedSingleExtras).forEach((eid) => {
-        if (!eid) return;
-        const e = allExtras.find((x) => String(x.id) === String(eid));
-        if (e) {
-          extrasTotal += e.price;
-          extrasNames.push(e.name);
-        }
-      });
-
-      const multipleExtrasList: { id: string; name: string; price: number }[] =
-        [];
-      state.selectedExtras.forEach((eid) => {
-        const e = allExtras.find((x) => String(x.id) === String(eid));
-        if (e) {
-          multipleExtrasList.push({
-            id: String(e.id),
-            name: e.name,
-            price: e.price,
-          });
-          extrasNames.push(e.name);
-        }
-      });
-
-      const freeCount = getFreeExtrasCount(item.name);
-      if (freeCount !== null) {
-        const sortedList = [...multipleExtrasList].sort(
-          (a, b) => b.price - a.price,
-        );
-        const freeIds = new Set<string>();
-        for (let i = 0; i < Math.min(freeCount, sortedList.length); i++) {
-          freeIds.add(sortedList[i].id);
-        }
-        multipleExtrasList.forEach((e) => {
-          if (!freeIds.has(e.id)) {
-            extrasTotal += e.price;
-          }
+      const { unitPrice, originalPrice, extrasNames, totalPrice } =
+        calculateItemPricing({
+          item,
+          selectedPortion: state.selectedPortion,
+          selectedSingleExtras: state.selectedSingleExtras,
+          selectedExtras: state.selectedExtras,
+          quantity: state.quantity,
+          restaurantExtras,
+          specialPrices: state.menuPayload?.specialPrices,
         });
-      } else {
-        multipleExtrasList.forEach((e) => {
-          extrasTotal += e.price;
-        });
-      }
 
-      const totalPrice = (unitPrice + extrasTotal) * state.quantity;
       const noteArr: string[] = [];
       if (state.selectedPortion) noteArr.push(`(${state.selectedPortion})`);
       if (state.selectedFlavors.length > 0)
@@ -631,7 +765,7 @@ export const useStore = create<AppState>((set, get) => {
 
       const payload: OrderPayload = {
         date: state.date,
-        employeeName: state.selectedEmployee,
+        employeeName: state.selectedEmployee.trim(),
         restaurantId: state.selectedRestaurant,
         useBalance: state.useBalance,
         items: [
@@ -639,7 +773,7 @@ export const useStore = create<AppState>((set, get) => {
             itemId: String(item.id),
             itemName: item.name,
             quantity: state.quantity,
-            originalPrice: unitPrice,
+            originalPrice,
             unitPrice,
             portionName: state.selectedPortion,
             totalPrice,
@@ -660,9 +794,14 @@ export const useStore = create<AppState>((set, get) => {
           subCategory: item.subCategory || '',
         });
 
+        // 保留 selectedRestaurant 以支援同店連續加點
         set({
-          selectedRestaurant: '',
           selectedItem: null,
+          selectedPortion: '',
+          selectedFlavors: [],
+          selectedExtras: [],
+          selectedSingleExtras: {},
+          note: '',
           customItemName: '',
           customItemPrice: '',
           quantity: 1,
@@ -1289,6 +1428,39 @@ export const useStore = create<AppState>((set, get) => {
         await applyRebuiltCatalog();
         set({ adminLoading: false });
         return { ok: true, deletedCount: res.deletedCount };
+      } catch (e: any) {
+        set({ adminLoading: false });
+        return { ok: false, error: e.message };
+      }
+    },
+
+    adminPreviewOrdersInRange: async (startDate, endDate) => {
+      try {
+        const preview = await previewOrdersInRangeApi(startDate, endDate);
+        return { ok: true, preview };
+      } catch (e: any) {
+        return { ok: false, error: e.message };
+      }
+    },
+
+    adminDeleteOrdersInRange: async (
+      startDate,
+      endDate,
+      includeDailyMeta = true,
+    ) => {
+      set({ adminLoading: true });
+      try {
+        const res = await deleteOrdersInRangeApi(
+          startDate,
+          endDate,
+          includeDailyMeta,
+        );
+        const currentDate = get().date;
+        if (currentDate && currentDate >= startDate && currentDate <= endDate) {
+          await get().refreshSummary();
+        }
+        set({ adminLoading: false });
+        return { ok: true, ...res };
       } catch (e: any) {
         set({ adminLoading: false });
         return { ok: false, error: e.message };

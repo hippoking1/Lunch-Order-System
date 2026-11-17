@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import classNames from 'classnames';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Settings } from 'lucide-react';
 import { useStore } from './store';
 import { useIsDesktop } from './hooks/useMediaQuery';
 import './index.css';
@@ -92,16 +92,17 @@ function App() {
           {/* Header */}
           <div className="app-header">
             <div className="app-header-left">
-              <div className="app-brand">Lifestyle Premium Dining</div>
-              <h1 className="display-title">Lunch Order.</h1>
+              <div className="app-brand mono">{store.date}</div>
+              <h1 className="display-title">公司團購訂餐</h1>
             </div>
-            <div className="app-header-right flex items-center gap-3">
+            <div className="app-header-right flex items-center gap-2">
               {store.userRole === 'admin' && (
                 <button
-                  className="btn btn-primary btn-sm flex items-center gap-1"
+                  className="btn btn-outline btn-sm"
                   onClick={() => store.setOption('activeTab', 'admin')}
                 >
-                  ⚙️ 後台管理
+                  <Settings size={16} strokeWidth={1.5} />
+                  後台管理
                 </button>
               )}
               <ThemeToggle />

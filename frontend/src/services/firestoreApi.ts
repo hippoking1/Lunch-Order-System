@@ -1628,3 +1628,130 @@ export async function cleanupDuplicateMenuItemsApi(
 
   return { duplicateGroups: map.size, deletedCount: toDelete.length };
 }
+
+// ── Historical Orders Range Cleanup ───────────────────
+
+export interface OrdersRangePreview {
+  ordersCount: number;
+  confirmationsCount: number;
+  locksCount: number;
+  totalAmount: number;
+  earliestDate: string;
+  latestDate: string;
+}
+
+export async function previewOrdersInRangeApi(
+  startDate: string,
+  endDate: string,
+): Promise<OrdersRangePreview> {
+  if (!startDate || !endDate || startDate > endDate) {
+    throw new Error('請提供有效的日期區間');
+  }
+
+  const [ordersSnap, confSnap, locksSnap] = await Promise.all([
+    getDocs(
+      query(
+        collection(db, 'orders'),
+        where('date', '>=', startDate),
+        where('date', '<=', endDate),
+      ),
+    ),
+    getDocs(
+      query(
+        collection(db, 'confirmations'),
+        where('date', '>=', startDate),
+        where('date', '<=', endDate),
+      ),
+    ),
+    getDocs(
+      query(
+        collection(db, 'categoryLocks'),
+        where('date', '>=', startDate),
+        where('date', '<=', endDate),
+      ),
+    ),
+  ]);
+
+  let totalAmount = 0;
+  let earliestDate = '';
+  let latestDate = '';
+  ordersSnap.docs.forEach((d) => {
+    const data = d.data();
+    totalAmount += Number(data.totalPrice || 0);
+    const dt = String(data.date || '');
+    if (dt) {
+      if (!earliestDate || dt < earliestDate) earliestDate = dt;
+      if (!latestDate || dt > latestDate) latestDate = dt;
+    }
+  });
+
+  return {
+    ordersCount: ordersSnap.size,
+    confirmationsCount: confSnap.size,
+    locksCount: locksSnap.size,
+    totalAmount,
+    earliestDate,
+    latestDate,
+  };
+}
+
+export async function deleteOrdersInRangeApi(
+  startDate: string,
+  endDate: string,
+  includeDailyMeta = true,
+): Promise<{
+  deletedOrders: number;
+  deletedConfirmations: number;
+  deletedLocks: number;
+}> {
+  if (!startDate || !endDate || startDate > endDate) {
+    throw new Error('請提供有效的日期區間');
+  }
+
+  const [ordersSnap, confSnap, locksSnap] = await Promise.all([
+    getDocs(
+      query(
+        collection(db, 'orders'),
+        where('date', '>=', startDate),
+        where('date', '<=', endDate),
+      ),
+    ),
+    includeDailyMeta
+      ? getDocs(
+          query(
+            collection(db, 'confirmations'),
+            where('date', '>=', startDate),
+            where('date', '<=', endDate),
+          ),
+        )
+      : Promise.resolve(null),
+    includeDailyMeta
+      ? getDocs(
+          query(
+            collection(db, 'categoryLocks'),
+            where('date', '>=', startDate),
+            where('date', '<=', endDate),
+          ),
+        )
+      : Promise.resolve(null),
+  ]);
+
+  // 歷史歸檔清理：直接刪除過期文件，不退還員工已扣款之餘額
+  const allRefs = [
+    ...ordersSnap.docs.map((d) => d.ref),
+    ...(confSnap ? confSnap.docs.map((d) => d.ref) : []),
+    ...(locksSnap ? locksSnap.docs.map((d) => d.ref) : []),
+  ];
+
+  for (let i = 0; i < allRefs.length; i += 400) {
+    const batch = writeBatch(db);
+    allRefs.slice(i, i + 400).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+
+  return {
+    deletedOrders: ordersSnap.size,
+    deletedConfirmations: confSnap?.size || 0,
+    deletedLocks: locksSnap?.size || 0,
+  };
+}

@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
+import { Phone, Copy, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useStore } from '../../store';
+import { useToast } from '../../hooks/useToast';
 import type { OrderRecord } from '../../types';
 import Modal from '../common/Modal';
 
-function getOrderDetailsInfo(o: OrderRecord, isDrink: boolean = false): string {
+function getOrderDetailsInfo(o: OrderRecord, isDrink = false): string {
   let d = o.note || '';
   if (o.category === '飲料' || isDrink) {
     if (o.sweetness) d = `${o.sweetness} ` + d;
@@ -26,6 +28,7 @@ export default function RestaurantOrderCard({
   categoryName,
 }: Props) {
   const store = useStore();
+  const addToast = useToast((s) => s.addToast);
   const [confirmModal, setConfirmModal] = useState<'confirm' | 'cancel' | null>(
     null,
   );
@@ -44,7 +47,7 @@ export default function RestaurantOrderCard({
 
   const totalQty = orders.reduce((a, b) => a + b.quantity, 0);
   const totalPrice = orders.reduce((a, b) => a + b.totalPrice, 0);
-  const telephone = store.telephones?.[restaurantId]?.telephone || '暫無電話';
+  const telephone = store.telephones?.[restaurantId]?.telephone || '';
 
   const isDrink = categoryName === '飲料';
 
@@ -69,9 +72,9 @@ export default function RestaurantOrderCard({
 
   const borderStyle = isConfirmed
     ? hasNew
-      ? '2px solid var(--error)'
-      : '2px solid var(--success)'
-    : '1px solid var(--divider)';
+      ? '1px solid var(--error)'
+      : '1px solid var(--success)'
+    : '1px solid var(--glass-border)';
 
   const handleConfirm = async () => {
     setConfirmModal(null);
@@ -83,99 +86,127 @@ export default function RestaurantOrderCard({
     await store.cancelConfirm(restaurantId);
   };
 
+  const handleCopySummary = async () => {
+    const lines = [
+      `【${restaurantName}】共 ${totalQty} 份 / $${totalPrice}`,
+      ...aggregatedItems.map((it) =>
+        `- ${it.name} x${it.qty}${it.detail ? ` (${it.detail})` : ''}`,
+      ),
+    ];
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      addToast('success', `已複製「${restaurantName}」叫餐明細`);
+    } catch {
+      addToast('error', '複製失敗，請手動選取');
+    }
+  };
+
   return (
     <>
-      <div className="card mb-4" style={{ border: borderStyle }}>
+      <div className="card mb-3" style={{ border: borderStyle }}>
         {/* Header */}
-        <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-          <div className="flex gap-4 items-center flex-wrap">
-            <h4 className="font-bold" style={{ fontSize: '18px' }}>
-              {restaurantName}
-            </h4>
-            <span className="badge badge-accent">📞 {telephone}</span>
-            <span className="mono font-semibold" style={{ color: 'var(--primary)' }}>
-              共 {totalQty} 份 / ${totalPrice}
-            </span>
+        <div className="flex justify-between items-start mb-3 flex-wrap gap-2">
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="font-semibold" style={{ fontSize: '16px' }}>
+                {restaurantName}
+              </h4>
+              <span className="mono font-semibold" style={{ color: 'var(--primary)' }}>
+                {totalQty} 份 · ${totalPrice}
+              </span>
+            </div>
+            {telephone ? (
+              <a
+                href={`tel:${telephone}`}
+                className="label mono flex items-center gap-1"
+                style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}
+              >
+                <Phone size={12} strokeWidth={1.5} />
+                {telephone}
+              </a>
+            ) : (
+              <span className="label">暫無電話</span>
+            )}
           </div>
-          <div className="flex gap-2">
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="chip-btn"
+              onClick={handleCopySummary}
+              title="複製叫餐明細"
+            >
+              <Copy size={12} strokeWidth={1.5} />
+              複製明細
+            </button>
             {!isConfirmed ? (
               <button
-                className="btn btn-outline"
-                style={{ padding: '6px 12px', fontSize: '13px' }}
+                type="button"
+                className="btn btn-outline btn-sm"
                 onClick={() => setConfirmModal('confirm')}
               >
                 確認下單
               </button>
             ) : hasNew ? (
               <button
-                className="btn btn-danger"
+                type="button"
+                className="btn btn-danger btn-sm"
                 onClick={() => setConfirmModal('confirm')}
               >
-                ⚠️ 有新增 (重新確認)
+                <AlertTriangle size={14} strokeWidth={1.5} />
+                有新增，重新確認
               </button>
             ) : (
               <button
+                type="button"
                 className="badge badge-success cursor-pointer"
-                style={{ border: 'none' }}
+                style={{ border: 'none', padding: '4px 10px' }}
                 onClick={() => setConfirmModal('cancel')}
               >
-                ✅ 已確認 ({confirmedByName})
+                <CheckCircle2 size={13} strokeWidth={1.5} />
+                已確認 ({confirmedByName})
               </button>
             )}
           </div>
         </div>
 
         {/* Aggregated items (for phone ordering) */}
-        <div className="card-section mb-4">
-          <div className="caption font-bold mb-3">
-            餐點細項展開 (打電叫餐用)
-          </div>
+        <div className="card-section mb-3">
+          <div className="label mb-2">餐點細項展開（叫餐用）</div>
           {aggregatedItems.map((item, idx) => (
-            <div
-              key={idx}
-              className="flex justify-between items-center"
-              style={{
-                borderBottom:
-                  idx === aggregatedItems.length - 1
-                    ? 'none'
-                    : '1px dashed var(--divider)',
-                padding: '6px 0',
-              }}
-            >
-              <div>
-                <span className="font-semibold">{item.name}</span>{' '}
-                <span className="mono caption badge badge-default">
-                  x{item.qty}
+            <div key={idx} style={{ padding: '4px 0' }}>
+              <div className="receipt-row" style={{ padding: 0 }}>
+                <span className="font-semibold">
+                  {item.name}{' '}
+                  <span className="mono badge badge-default">x{item.qty}</span>
                 </span>
-                {item.detail && (
-                  <div className="caption text-muted mt-1">
-                    備註：{item.detail}
-                  </div>
-                )}
+                <span className="receipt-leader" />
+                <span className="mono font-semibold">${item.totalPrice}</span>
               </div>
-              <div className="mono font-semibold">${item.totalPrice}</div>
+              {item.detail && (
+                <div className="label" style={{ marginTop: 2 }}>
+                  備註：{item.detail}
+                </div>
+              )}
             </div>
           ))}
         </div>
 
         {/* Employee detail table (for distribution) */}
-        <div className="caption font-semibold mb-2">
-          員工清單明細 (發餐用)
-        </div>
+        <div className="label mb-2">員工清單明細（發餐用）</div>
         <table className="data-table">
           <tbody>
             {orders.map((o, idx) => (
               <tr key={idx}>
-                <td style={{ minWidth: '80px' }}>
+                <td style={{ minWidth: '72px' }}>
                   <div className="font-semibold">{o.employee}</div>
                 </td>
                 <td>
                   <div style={{ fontWeight: 500 }}>
-                    {o.item}{' '}
-                    <span className="mono">x{o.quantity}</span>
+                    {o.item} <span className="mono">x{o.quantity}</span>
                   </div>
                   {getOrderDetailsInfo(o, isDrink) && (
-                    <div className="caption text-muted">
+                    <div className="label">
                       備註：{getOrderDetailsInfo(o, isDrink)}
                     </div>
                   )}

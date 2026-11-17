@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Pencil, Check } from 'lucide-react';
 import { useStore } from '../../store';
 import { useToast } from '../../hooks/useToast';
 import type { OrderRecord } from '../../types';
@@ -46,15 +47,15 @@ function EditableNote({
           autoFocus
         />
         <button
-          className="badge badge-accent"
-          style={{ border: 'none', cursor: 'pointer', padding: '2px 6px' }}
+          type="button"
+          className="chip-btn active"
           onClick={handleSave}
         >
           儲存
         </button>
         <button
-          className="badge badge-default"
-          style={{ border: 'none', cursor: 'pointer', padding: '2px 6px' }}
+          type="button"
+          className="chip-btn"
           onClick={() => {
             setNote(initialNote);
             setIsEditing(false);
@@ -68,7 +69,7 @@ function EditableNote({
 
   return (
     <div
-      className="caption text-muted flex items-center gap-2 cursor-pointer"
+      className="label flex items-center gap-1 cursor-pointer"
       style={{ marginTop: '2px' }}
       onClick={() => {
         setNote(initialNote);
@@ -79,7 +80,7 @@ function EditableNote({
       <span>
         備註：{initialNote || <span style={{ opacity: 0.5 }}>無</span>}
       </span>
-      <span style={{ fontSize: '11px', opacity: 0.6 }}>✏️</span>
+      <Pencil size={11} strokeWidth={1.5} style={{ opacity: 0.6 }} />
     </div>
   );
 }
@@ -111,33 +112,64 @@ export default function EmployeeReconCard({ employee, orders }: Props) {
     );
   }, [orders]);
 
-  const handleCalc = () => {
+  const isSettled = orders.every((o) => o.isChangeGiven || o.isPaidByBalance);
+  const isBalanceSettled = orders.every((o) => o.isPaidByBalance);
+
+  const handleCalc = async () => {
     const p = Number(paid) || 0;
     const c = p - subtotal;
     setChange(String(c));
-    store.savePayment(employee, p, c);
+    await store.savePayment(employee, p, c);
     addToast('success', `已為 ${employee} 計算找零 $${c}`);
+  };
+
+  const handleQuickPay = async (cashAmount: number, markGiven = false) => {
+    const c = cashAmount - subtotal;
+    setPaid(String(cashAmount));
+    setChange(String(c));
+    await store.savePayment(employee, cashAmount, c);
+    if (markGiven) {
+      await store.setChangeGiven(employee, true);
+      addToast('success', `${employee} 已剛好結清 $${cashAmount}`);
+    } else {
+      addToast('success', `${employee} 收 $${cashAmount}，應找 $${c}`);
+    }
   };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeleteTarget(null);
-    await store.deleteOrder(deleteTarget.rowNumber);
-    addToast('success', '訂單已刪除');
+    const res = await store.deleteOrder(deleteTarget.rowNumber);
+    addToast('success', `訂單已刪除${res.message || ''}`);
   };
 
   return (
     <>
-      <div className="card mb-4">
+      <div
+        className="card mb-3"
+        style={{
+          borderColor: isSettled ? 'var(--success)' : undefined,
+        }}
+      >
         <div className="flex justify-between items-center mb-3">
-          <h4 className="font-bold" style={{ fontSize: '18px' }}>
-            {employee}
-          </h4>
+          <div className="flex items-center gap-2">
+            <span
+              className={`status-dot ${isSettled ? 'status-dot-success' : 'status-dot-warning'}`}
+            />
+            <h4 className="font-semibold" style={{ fontSize: '16px' }}>
+              {employee}
+            </h4>
+            {isSettled && (
+              <span className="badge badge-success">
+                {isBalanceSettled ? '餘額結清' : '已結清'}
+              </span>
+            )}
+          </div>
           <span className="price-display price-md">${subtotal}</span>
         </div>
 
         {/* Order items */}
-        <div className="flex flex-col mb-4">
+        <div className="flex flex-col mb-3">
           {orders.map((o, idx) => {
             let isDrink = false;
             if (store.menuPayload) {
@@ -149,7 +181,7 @@ export default function EmployeeReconCard({ employee, orders }: Props) {
             return (
               <div
                 key={idx}
-                className="flex justify-between items-center"
+                className="flex justify-between items-center gap-2"
                 style={{
                   padding: '8px 0',
                   borderBottom:
@@ -158,15 +190,15 @@ export default function EmployeeReconCard({ employee, orders }: Props) {
                       : '1px dashed var(--divider)',
                 }}
               >
-                <div>
+                <div className="flex-1" style={{ minWidth: 0 }}>
                   <span className="font-semibold">
                     {o.item}{' '}
-                    <span className="mono caption badge badge-default">
+                    <span className="mono badge badge-default">
                       x{o.quantity}
                     </span>
                   </span>
                   {isDrink && (o.sweetness || o.ice) && (
-                    <div className="caption text-muted mt-1">
+                    <div className="label mt-1">
                       {o.sweetness} {o.ice}
                     </div>
                   )}
@@ -175,10 +207,11 @@ export default function EmployeeReconCard({ employee, orders }: Props) {
                     rowNumber={o.rowNumber}
                   />
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
                   <span className="mono font-semibold">${o.totalPrice}</span>
                   <button
-                    className="btn btn-danger"
+                    type="button"
+                    className="btn btn-danger btn-sm"
                     onClick={() => setDeleteTarget(o)}
                   >
                     刪除
@@ -191,29 +224,54 @@ export default function EmployeeReconCard({ employee, orders }: Props) {
 
         {/* Payment section */}
         <div className="card-section">
-          <div className="flex gap-4 items-end mb-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+            <div className="flex items-center gap-1 flex-wrap">
+              <button
+                type="button"
+                className="chip-btn"
+                onClick={() => handleQuickPay(subtotal, true)}
+              >
+                <Check size={12} strokeWidth={1.5} />
+                剛好結清
+              </button>
+              {[100, 500, 1000].map((bill) => (
+                <button
+                  key={bill}
+                  type="button"
+                  className="chip-btn"
+                  onClick={() => handleQuickPay(bill, false)}
+                >
+                  ${bill}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-3 items-end mb-3">
             <div className="flex-1">
-              <label className="caption">已繳</label>
+              <label className="label">已繳</label>
               <input
                 type="number"
+                className="mono"
                 value={paid}
                 onChange={(e) => setPaid(e.target.value)}
               />
             </div>
             <div className="flex-1">
-              <label className="caption">應找</label>
+              <label className="label">應找</label>
               <input
                 type="number"
+                className="mono"
                 value={change}
                 onChange={(e) => setChange(e.target.value)}
               />
             </div>
-            <button className="btn btn-outline" onClick={handleCalc}>
+            <button type="button" className="btn btn-outline btn-sm" onClick={handleCalc}>
               計算
             </button>
           </div>
 
-          <label className="flex items-center gap-2 cursor-pointer font-semibold">
+          <label className="flex items-center gap-2 cursor-pointer caption">
             <input
               type="checkbox"
               className="checkbox-styled"
@@ -222,7 +280,7 @@ export default function EmployeeReconCard({ employee, orders }: Props) {
                 store.setChangeGiven(employee, e.target.checked)
               }
             />
-            已找 (打勾即時記錄)
+            已找零 / 已結清
           </label>
         </div>
       </div>

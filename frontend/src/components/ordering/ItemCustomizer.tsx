@@ -1,12 +1,19 @@
 import { useMemo } from 'react';
 import classNames from 'classnames';
 import { Loader2, Plus, Minus, Send } from 'lucide-react';
-import { useStore, getFreeExtrasCount, isDrinkItem } from '../../store';
+import {
+  useStore,
+  getFreeExtrasCount,
+  isDrinkItem,
+  calculateItemPricing,
+} from '../../store';
+import { useToast } from '../../hooks/useToast';
 import { SWEETNESS_OPTIONS, ICE_OPTIONS } from '../../constants';
 import type { Extra } from '../../types';
 
 export default function ItemCustomizer() {
   const store = useStore();
+  const addToast = useToast((s) => s.addToast);
 
   const availableExtras = useMemo(() => {
     if (!store.menuPayload || !store.selectedRestaurant)
@@ -34,51 +41,30 @@ export default function ItemCustomizer() {
     return getFreeExtrasCount(store.selectedItem.name);
   }, [store.selectedItem]);
 
-  const calculatedPrice = useMemo(() => {
-    if (!store.selectedItem) return 0;
-    let base = store.selectedItem.price;
-    if (store.selectedPortion) {
-      const p = store.selectedItem.portions?.find(
-        (x: { name: string; price: number }) => x.name === store.selectedPortion,
-      );
-      if (p) base = p.price;
+  const pricing = useMemo(() => {
+    if (!store.selectedItem) {
+      return {
+        unitPrice: 0,
+        originalPrice: 0,
+        specialLabel: undefined,
+        extrasTotal: 0,
+        extrasNames: [],
+        totalPrice: 0,
+      };
     }
-    let extrasTotal = 0;
-    const allEx =
+    const restaurantExtras =
       store.menuPayload?.extras.filter(
         (e) => e.restaurantId === store.selectedRestaurant,
       ) || [];
-    Object.values(store.selectedSingleExtras).forEach((eid) => {
-      const e = allEx.find((x) => String(x.id) === String(eid));
-      if (e) extrasTotal += e.price;
+    return calculateItemPricing({
+      item: store.selectedItem,
+      selectedPortion: store.selectedPortion,
+      selectedSingleExtras: store.selectedSingleExtras,
+      selectedExtras: store.selectedExtras,
+      quantity: store.quantity,
+      restaurantExtras,
+      specialPrices: store.menuPayload?.specialPrices,
     });
-
-    const multipleExtrasList: { id: string; price: number }[] = [];
-    store.selectedExtras.forEach((eid) => {
-      const e = allEx.find((x) => String(x.id) === String(eid));
-      if (e) {
-        multipleExtrasList.push({ id: String(e.id), price: e.price });
-      }
-    });
-
-    if (freeExtrasCount !== null) {
-      const sortedList = [...multipleExtrasList].sort((a, b) => b.price - a.price);
-      const freeIds = new Set<string>();
-      for (let i = 0; i < Math.min(freeExtrasCount, sortedList.length); i++) {
-        freeIds.add(sortedList[i].id);
-      }
-      multipleExtrasList.forEach((e) => {
-        if (!freeIds.has(e.id)) {
-          extrasTotal += e.price;
-        }
-      });
-    } else {
-      multipleExtrasList.forEach((e) => {
-        extrasTotal += e.price;
-      });
-    }
-
-    return (base + extrasTotal) * store.quantity;
   }, [
     store.selectedItem,
     store.selectedPortion,
@@ -87,20 +73,23 @@ export default function ItemCustomizer() {
     store.quantity,
     store.menuPayload,
     store.selectedRestaurant,
-    freeExtrasCount,
   ]);
 
   const currentRest = useMemo(() => {
-    return store.menuPayload?.restaurants.find((r) => r.id === store.selectedRestaurant);
+    return store.menuPayload?.restaurants.find(
+      (r) => r.id === store.selectedRestaurant,
+    );
   }, [store.menuPayload, store.selectedRestaurant]);
 
-  const sweetnessOptions = currentRest?.sweetnessOptions && currentRest.sweetnessOptions.length > 0
-    ? currentRest.sweetnessOptions
-    : SWEETNESS_OPTIONS;
+  const sweetnessOptions =
+    currentRest?.sweetnessOptions && currentRest.sweetnessOptions.length > 0
+      ? currentRest.sweetnessOptions
+      : SWEETNESS_OPTIONS;
 
-  const iceOptions = currentRest?.iceOptions && currentRest.iceOptions.length > 0
-    ? currentRest.iceOptions
-    : ICE_OPTIONS;
+  const iceOptions =
+    currentRest?.iceOptions && currentRest.iceOptions.length > 0
+      ? currentRest.iceOptions
+      : ICE_OPTIONS;
 
   const isDrink = isDrinkItem(
     store.selectedItem,
@@ -109,19 +98,56 @@ export default function ItemCustomizer() {
   );
 
   const handleSubmit = async () => {
-    await store.submitOrder();
+    if (!store.selectedEmployee.trim()) {
+      addToast('error', '請先在上方選擇訂餐人姓名');
+      const input = document.getElementById('employee-input');
+      if (input) {
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        input.focus();
+      }
+      return;
+    }
+
+    const itemName = store.selectedItem?.name || '';
+    const qty = store.quantity;
+    const total = pricing.totalPrice;
+
+    const res = await store.submitOrder();
+    if (res.ok) {
+      addToast('success', `已送出：${itemName} × ${qty} ($${total})`);
+    } else {
+      addToast('error', res.error || '送出訂單失敗');
+    }
   };
 
   if (!store.selectedItem) return null;
 
+  const trimmedEmp = store.selectedEmployee.trim();
+  const hasSpecial = pricing.unitPrice < pricing.originalPrice;
+
   return (
-    <div className="card animate-slide-up flex flex-col gap-5">
-      <h2 className="h2">{store.selectedItem.name}</h2>
+    <div className="card animate-slide-up flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="h2">{store.selectedItem.name}</h2>
+        <div className="flex items-center gap-2">
+          {hasSpecial && (
+            <>
+              <span className="badge badge-error">
+                {pricing.specialLabel || '特價'}
+              </span>
+              <s className="mono caption text-muted">${pricing.originalPrice}</s>
+            </>
+          )}
+          <span className="mono font-semibold" style={{ color: 'var(--primary)' }}>
+            ${pricing.unitPrice}
+          </span>
+        </div>
+      </div>
 
       {/* Portions */}
       {store.selectedItem.portions?.length > 0 && (
         <div>
-          <div className="caption font-semibold mb-2">份量選擇</div>
+          <div className="caption mb-2">份量選擇</div>
           <div className="flex gap-2 flex-wrap">
             {store.selectedItem.portions.map(
               (p: { name: string; price: number }) => (
@@ -132,7 +158,7 @@ export default function ItemCustomizer() {
                   })}
                   onClick={() => store.setPortion(p.name)}
                   style={{
-                    padding: '8px 16px',
+                    padding: '8px 14px',
                     flexDirection: 'row',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -151,7 +177,7 @@ export default function ItemCustomizer() {
       {/* Flavors (single select) */}
       {store.selectedItem.flavors && (
         <div>
-          <div className="caption font-semibold mb-2">口味</div>
+          <div className="caption mb-2">口味</div>
           <div className="flex gap-2 flex-wrap">
             {store.selectedItem.flavors
               .split(',')
@@ -164,7 +190,7 @@ export default function ItemCustomizer() {
                     selected: store.selectedFlavors.includes(fn),
                   })}
                   onClick={() => store.toggleFlavor(fn)}
-                  style={{ padding: '8px 16px', flexDirection: 'row' }}
+                  style={{ padding: '8px 14px', flexDirection: 'row' }}
                 >
                   {fn}
                 </div>
@@ -175,9 +201,11 @@ export default function ItemCustomizer() {
 
       {/* Sweetness / Ice (drinks only) */}
       {isDrink && (
-        <div className="flex gap-4">
+        <div className="flex gap-3">
           <div className="flex-1">
-            <label className="caption">甜度</label>
+            <label className="caption mb-1" style={{ display: 'block' }}>
+              甜度
+            </label>
             <select
               value={store.sweetness}
               onChange={(e) => store.setOption('sweetness', e.target.value)}
@@ -190,7 +218,9 @@ export default function ItemCustomizer() {
             </select>
           </div>
           <div className="flex-1">
-            <label className="caption">冰塊</label>
+            <label className="caption mb-1" style={{ display: 'block' }}>
+              冰塊
+            </label>
             <select
               value={store.ice}
               onChange={(e) => store.setOption('ice', e.target.value)}
@@ -208,8 +238,8 @@ export default function ItemCustomizer() {
       {/* Single select extras */}
       {Object.keys(availableExtras.single).map((group) => (
         <div key={group}>
-          <label className="caption">
-            {group} (單選)
+          <label className="caption mb-1" style={{ display: 'block' }}>
+            {group}（單選）
           </label>
           <select
             value={store.selectedSingleExtras[group] || ''}
@@ -228,17 +258,20 @@ export default function ItemCustomizer() {
       {/* Multi select extras */}
       {availableExtras.multiple.length > 0 && (
         <div>
-          <div className="caption font-semibold mb-2">
-            加點 (可複選
+          <div className="caption mb-2">
+            加點（可複選
             {freeExtrasCount !== null
               ? `，已選 ${store.selectedExtras.length} / ${freeExtrasCount} 項配料`
               : ''}
-            )
+            ）
           </div>
           <div className="flex gap-2 flex-wrap">
             {availableExtras.multiple.map((e) => {
               const isSelected = store.selectedExtras.includes(e.id);
-              const disabled = freeExtrasCount !== null && store.selectedExtras.length >= freeExtrasCount && !isSelected;
+              const disabled =
+                freeExtrasCount !== null &&
+                store.selectedExtras.length >= freeExtrasCount &&
+                !isSelected;
               return (
                 <div
                   key={e.id}
@@ -251,10 +284,10 @@ export default function ItemCustomizer() {
                     store.toggleExtra(e.id);
                   }}
                   style={{
-                    padding: '8px 16px',
+                    padding: '8px 14px',
                     flexDirection: 'row',
                     alignItems: 'center',
-                    opacity: disabled ? 0.5 : 1,
+                    opacity: disabled ? 0.45 : 1,
                     cursor: disabled ? 'not-allowed' : 'pointer',
                   }}
                 >
@@ -263,8 +296,12 @@ export default function ItemCustomizer() {
                     <span className="option-price" style={{ marginLeft: 6 }}>
                       {e.price > 0 ? (
                         <span>
-                          <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>+${e.price}</span>
-                          <span style={{ color: '#10B981', marginLeft: '4px' }}>免費</span>
+                          <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>
+                            +${e.price}
+                          </span>
+                          <span style={{ color: 'var(--success)', marginLeft: '4px' }}>
+                            免費
+                          </span>
                         </span>
                       ) : (
                         `+$${e.price}`
@@ -284,51 +321,58 @@ export default function ItemCustomizer() {
 
       {/* Note */}
       <div>
-        <label className="caption">備註</label>
+        <label className="caption mb-1" style={{ display: 'block' }}>
+          備註
+        </label>
         <input
           type="text"
-          placeholder="例如: 不要香菜"
+          placeholder="例如：不要香菜"
           value={store.note}
           onChange={(e) => store.setOption('note', e.target.value)}
         />
       </div>
 
-      <hr className="divider" />
-
-      {/* Quantity + Price + Submit */}
-      <div className="flex items-center justify-between">
-        <div className="qty-control">
-          <button
-            className="qty-btn"
-            onClick={() => store.setQuantity(store.quantity - 1)}
-          >
-            <Minus size={18} />
-          </button>
-          <div className="qty-value">{store.quantity}</div>
-          <button
-            className="qty-btn"
-            onClick={() => store.setQuantity(store.quantity + 1)}
-          >
-            <Plus size={18} />
-          </button>
+      {/* Receipt Footer Moment */}
+      <div className="card-section flex flex-col gap-3">
+        <div className="receipt-row">
+          <span className="caption">
+            {store.selectedItem.name} × {store.quantity}
+          </span>
+          <span className="receipt-leader" />
+          <span className="price-display price-lg">${pricing.totalPrice}</span>
         </div>
 
-        <div className="flex items-center gap-6">
-          <div>
-            <div className="caption text-right">總金額</div>
-            <div className="price-display price-lg">${calculatedPrice}</div>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="qty-control">
+            <button
+              type="button"
+              className="qty-btn"
+              onClick={() => store.setQuantity(store.quantity - 1)}
+            >
+              <Minus size={16} strokeWidth={1.5} />
+            </button>
+            <div className="qty-value">{store.quantity}</div>
+            <button
+              type="button"
+              className="qty-btn"
+              onClick={() => store.setQuantity(store.quantity + 1)}
+            >
+              <Plus size={16} strokeWidth={1.5} />
+            </button>
           </div>
+
           <button
+            type="button"
             className="btn btn-primary"
             disabled={store.loading}
             onClick={handleSubmit}
           >
             {store.loading ? (
-              <Loader2 className="animate-spin" size={20} />
+              <Loader2 className="animate-spin" size={16} strokeWidth={1.5} />
             ) : (
-              <Send size={20} />
+              <Send size={16} strokeWidth={1.5} />
             )}
-            確認送出
+            {trimmedEmp ? `以 ${trimmedEmp} 送出` : '確認送出'}
           </button>
         </div>
       </div>

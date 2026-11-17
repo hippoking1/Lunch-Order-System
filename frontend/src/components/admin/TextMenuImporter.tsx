@@ -358,31 +358,31 @@ RestaurantID,ItemID,PortionName,Price
 
   const typeConfig: Record<string, any> = {
     update: {
-      label: '⚡ 待審變更 / 內容與價格異動 (UPDATE)',
+      label: '待審變更 / 內容與價格異動 (UPDATE)',
       icon: Zap,
       color: 'var(--warning)',
       badge: 'badge-warning',
     },
     add: {
-      label: '✨ 新增品項 (ADD)',
+      label: '新增品項 (ADD)',
       icon: Check,
       color: 'var(--success)',
       badge: 'badge-success',
     },
     remove: {
-      label: '❌ 停售品項 (REMOVE)',
+      label: '停售品項 (REMOVE)',
       icon: X,
       color: 'var(--error)',
       badge: 'badge-error',
     },
     sale: {
-      label: '🔥 特價設定 (SALE)',
+      label: '特價設定 (SALE)',
       icon: AlertTriangle,
       color: 'var(--primary)',
       badge: 'badge-primary',
     },
     unchanged: {
-      label: '✅ 內容完全一致 (無須變更)',
+      label: '內容完全一致 (無須變更)',
       icon: Check,
       color: 'var(--text-muted)',
       badge: 'badge-default',
@@ -394,7 +394,10 @@ RestaurantID,ItemID,PortionName,Price
       {/* Input Section */}
       <div className="card">
         <div className="flex justify-between items-center mb-3">
-          <div className="h3">📝 貼上菜單內容 / 雙表格 CSV</div>
+          <div className="h3">
+            <FileText size={16} strokeWidth={1.5} />
+            貼上菜單內容 / 雙表格 CSV
+          </div>
           <button
             className="btn btn-outline btn-sm"
             onClick={() => {
@@ -409,7 +412,6 @@ RestaurantID,ItemID,PortionName,Price
             className="btn btn-outline btn-sm flex items-center gap-1"
             onClick={handleCopyGemPrompt}
             title="複製已為此餐廳量身設定的 Gemini Gem 分析 Prompt"
-            style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
           >
             <Copy size={14} /> 複製 Gem 專用 Prompt
           </button>
@@ -417,8 +419,8 @@ RestaurantID,ItemID,PortionName,Price
         <p className="caption mb-2">
           支援雙表格 CSV 格式 (<code>RestaurantID,ItemID,SubCategory,ItemName,Flavors,Price</code> 及 <code>RestaurantID,ItemID,PortionName,Price</code>)，貼入後系統將自動比對現有菜單並將異動匯入<b>待審變更</b>。
         </p>
-        <div style={{ background: 'rgba(124, 92, 252, 0.08)', border: '1px solid rgba(124, 92, 252, 0.2)', padding: '8px 12px', borderRadius: 8, fontSize: 12, marginBottom: 12, color: 'var(--text-secondary)' }}>
-          💡 <b>智慧解耦提示</b>：只要在下方選單選好目標餐廳，CSV 內的 <code>RestaurantID</code>（無論填 1、30 或任意值）系統皆會<b>自動套用至該餐廳</b>，且份量以 <code>ItemID</code> 自動關聯，完全無需手動修改隨機 ID！
+        <div style={{ background: 'var(--primary-muted)', border: '1px solid var(--divider-strong)', padding: '8px 12px', borderRadius: 8, fontSize: 12, marginBottom: 12, color: 'var(--text-secondary)' }}>
+          <b>智慧解耦提示</b>：只要在下方選單選好目標餐廳，CSV 內的 <code>RestaurantID</code>（無論填 1、30 或任意值）系統皆會<b>自動套用至該餐廳</b>，且份量以 <code>ItemID</code> 自動關聯，完全無需手動修改隨機 ID。
         </div>
 
         <div
@@ -484,7 +486,7 @@ RestaurantID,ItemID,PortionName,Price
                 disabled={cleaning}
                 title="掃描同餐廳同品項的重複文件並一鍵清除多餘品項"
               >
-                {cleaning ? <RefreshCw size={14} className="animate-spin" /> : '🧹 一鍵清理重複品項'}
+                {cleaning ? <RefreshCw size={14} className="animate-spin" /> : '一鍵清理重複品項'}
               </button>
               <button className="btn btn-ghost btn-sm" onClick={selectAll}>
                 全選異動
@@ -604,7 +606,6 @@ RestaurantID,ItemID,PortionName,Price
                           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>優先排序標記：</span>
                           {(['期間限定', '新品上市', '店長推薦'] as const).map((tag) => {
                             const isTagged = item.limitedType === tag;
-                            const icons = { '期間限定': '🌸', '新品上市': '🆕', '店長推薦': '⭐' };
                             return (
                               <button
                                 key={tag}
@@ -630,7 +631,7 @@ RestaurantID,ItemID,PortionName,Price
                                   );
                                 }}
                               >
-                                {icons[tag]} {tag}
+                                {tag}
                               </button>
                             );
                           })}
@@ -660,7 +661,7 @@ RestaurantID,ItemID,PortionName,Price
                 <div className="flex items-center gap-2">
                   <Check size={16} style={{ color: 'var(--text-muted)' }} />
                   <span className="font-semibold text-sm" style={{ color: 'var(--text-muted)' }}>
-                    ✅ 內容完全一致 / 無須變更 (UNCHANGED)
+                    內容完全一致 / 無須變更 (UNCHANGED)
                   </span>
                   <span className="badge badge-default" style={{ fontSize: 11 }}>
                     {grouped.unchanged.length} 項

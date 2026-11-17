@@ -147,7 +147,10 @@ export default function LimitedItemPanel() {
       {/* Add limited item */}
       <div className="card">
         <div className="flex justify-between items-center mb-3">
-          <div className="h3">🌸 新增限定商品</div>
+          <div className="h3">
+            <Sparkles size={16} strokeWidth={1.5} />
+            新增限定商品
+          </div>
           {!adding && (
             <button className="btn btn-primary" onClick={() => setAdding(true)}>
               <Plus size={16} /> 新增
@@ -310,13 +313,13 @@ export default function LimitedItemPanel() {
       {/* Limited items list */}
       <div className="card">
         <div className="flex justify-between items-center mb-3">
-          <div className="h3">📋 限定商品列表</div>
+          <div className="h3">限定商品列表</div>
           <span className="caption">{limitedItems.length} 項</span>
         </div>
 
         {limitedItems.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-state-icon">🌸</div>
+            <Sparkles size={32} strokeWidth={1.5} className="empty-state-icon" />
             <div className="empty-state-title">尚無限定商品</div>
             <div className="empty-state-desc">點擊上方「新增」來新增當季或期間限定商品</div>
           </div>

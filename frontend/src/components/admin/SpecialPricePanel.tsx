@@ -72,7 +72,10 @@ export default function SpecialPricePanel() {
     <div className="flex flex-col gap-4">
       {/* Add special */}
       <div className="card">
-        <div className="h3 mb-3">💰 設定特價</div>
+        <div className="h3 mb-3">
+          <Tag size={16} strokeWidth={1.5} />
+          設定特價
+        </div>
         <div className="flex gap-3" style={{ flexWrap: 'wrap' }}>
           <select
             value={selectedRest}
@@ -166,10 +169,13 @@ export default function SpecialPricePanel() {
 
       {/* Active specials */}
       <div className="card">
-        <div className="h3 mb-3">🏷️ 目前特價</div>
+        <div className="h3 mb-3">
+          <Tag size={16} strokeWidth={1.5} />
+          目前特價
+        </div>
         {activeSpecials.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-state-icon">🏷️</div>
+            <Tag size={32} strokeWidth={1.5} className="empty-state-icon" />
             <div className="empty-state-title">沒有進行中的特價</div>
           </div>
         ) : (

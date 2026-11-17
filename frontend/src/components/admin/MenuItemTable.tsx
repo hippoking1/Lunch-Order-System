@@ -428,16 +428,15 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
             <Plus size={15} /> 新增品項
           </button>
           <button
-            className="btn btn-sm flex items-center gap-1"
+            className="btn btn-outline btn-sm flex items-center gap-1"
             onClick={() => {
               setAddingCombo(true);
               setAdding(false);
               setAddingExtra(false);
             }}
             disabled={selectedRest === '__ALL__'}
-            style={{ background: 'var(--accent)', color: '#fff', border: '1px solid var(--accent)' }}
           >
-            🍱 新增套餐
+            <Plus size={14} strokeWidth={1.5} /> 新增套餐
           </button>
           <button
             className="btn btn-outline btn-sm flex items-center gap-1"
@@ -448,7 +447,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
             }}
             disabled={selectedRest === '__ALL__'}
           >
-            ➕ 新增加點
+            <Plus size={14} strokeWidth={1.5} /> 新增加點
           </button>
           <button
             className="btn btn-outline btn-sm flex items-center gap-1"
@@ -565,7 +564,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                 onClick={() => setItemsPasteMode(!itemsPasteMode)}
                 style={{ fontSize: 12 }}
               >
-                <FileText size={13} /> {itemsPasteMode ? '切換表格輸入' : '📝 文字貼上解析'}
+                <FileText size={13} /> {itemsPasteMode ? '切換表格輸入' : '文字貼上解析'}
               </button>
               <button className="btn btn-ghost btn-sm" onClick={() => setAdding(false)}>
                 <X size={16} />
@@ -719,8 +718,8 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
       {addingCombo && selectedRest !== '__ALL__' && (
         <div className="card card-section animate-slide-up" style={{ border: '1.5px solid var(--accent)' }}>
           <div className="flex justify-between items-center mb-3">
-            <div className="h3 flex items-center gap-2" style={{ color: 'var(--accent)' }}>
-              🍱 新增套餐選項至 {getRestName(selectedRest)}（支援一次新增多種套餐）
+            <div className="h3 flex items-center gap-2" style={{ color: 'var(--primary)' }}>
+              新增套餐選項至 {getRestName(selectedRest)}（支援一次新增多種套餐）
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -729,7 +728,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                 onClick={() => setCombosPasteMode(!combosPasteMode)}
                 style={{ fontSize: 12 }}
               >
-                <FileText size={13} /> {combosPasteMode ? '切換表格輸入' : '📝 文字貼上解析'}
+                <FileText size={13} /> {combosPasteMode ? '切換表格輸入' : '文字貼上解析'}
               </button>
               <button className="btn btn-ghost btn-sm" onClick={() => setAddingCombo(false)}>
                 <X size={16} />
@@ -861,7 +860,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
         <div className="card card-section animate-slide-up" style={{ border: '1.5px solid var(--success)' }}>
           <div className="flex justify-between items-center mb-3">
             <div className="h3 flex items-center gap-2" style={{ color: 'var(--success)' }}>
-              ➕ 新增加點 / 配料至 {getRestName(selectedRest)}（支援一次新增多項）
+              新增加點 / 配料至 {getRestName(selectedRest)}（支援一次新增多項）
             </div>
             <button className="btn btn-ghost btn-sm" onClick={() => setAddingExtra(false)}>
               <X size={16} />
@@ -986,7 +985,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
           onClick={() => setItemSection('items')}
           style={{ fontSize: 13, padding: '6px 14px' }}
         >
-          📋 正式菜單品項 ({items.length})
+          正式菜單品項 ({items.length})
         </button>
         <button
           type="button"
@@ -998,12 +997,9 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
           style={{
             fontSize: 13,
             padding: '6px 14px',
-            background: itemSection === 'combos' ? 'var(--accent)' : 'transparent',
-            borderColor: itemSection === 'combos' ? 'var(--accent)' : 'transparent',
-            color: itemSection === 'combos' ? '#fff' : 'inherit',
           }}
         >
-          🍱 套餐選擇 ({comboExtras.length})
+          套餐選擇 ({comboExtras.length})
         </button>
         <button
           type="button"
@@ -1014,7 +1010,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
           onClick={() => setItemSection('extras')}
           style={{ fontSize: 13, padding: '6px 14px' }}
         >
-          ➕ 加點 / 配料項目 ({regularExtras.length})
+          加點 / 配料項目 ({regularExtras.length})
         </button>
       </div>
 
@@ -1022,16 +1018,16 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
       {itemSection === 'combos' ? (
         <div className="card">
           <div className="flex justify-between items-center mb-3">
-            <div className="h3">🍱 套餐選擇清單</div>
+            <div className="h3">套餐選擇清單</div>
             <span className="caption">{comboExtras.length} 項</span>
           </div>
 
           {comboExtras.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state-icon">🍱</div>
+              <Layers size={32} strokeWidth={1.5} className="empty-state-icon" />
               <div className="empty-state-title">尚未有套餐項目</div>
               <div className="empty-state-desc">
-                {selectedRest === '__ALL__' ? '請先選擇指定餐廳再新增套餐項目' : '點擊上方【🍱 新增套餐】為此餐廳新增套餐'}
+                {selectedRest === '__ALL__' ? '請先選擇指定餐廳再新增套餐項目' : '點擊上方「新增套餐」為此餐廳新增套餐'}
               </div>
             </div>
           ) : (
@@ -1132,13 +1128,13 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
       ) : itemSection === 'extras' ? (
         <div className="card">
           <div className="flex justify-between items-center mb-3">
-            <div className="h3">➕ 加點配料清單</div>
+            <div className="h3">加點配料清單</div>
             <span className="caption">{regularExtras.length} 項</span>
           </div>
 
           {regularExtras.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state-icon">➕</div>
+              <Plus size={32} strokeWidth={1.5} className="empty-state-icon" />
               <div className="empty-state-title">尚未有加點項目</div>
               <div className="empty-state-desc">
                 {selectedRest === '__ALL__' ? '請先選擇指定餐廳再新增加點項目' : '點擊上方按鈕為此餐廳新增加點項目'}
@@ -1249,7 +1245,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
 
           {items.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state-icon">📋</div>
+              <FileText size={32} strokeWidth={1.5} className="empty-state-icon" />
               <div className="empty-state-title">沒有品項</div>
               <div className="empty-state-desc">選擇餐廳並新增品項</div>
             </div>
@@ -1321,7 +1317,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                         <span className="font-semibold truncate">
                           {item.name}
                           {!!(item.createdAt && (Date.now() - new Date(item.createdAt).getTime()) < newItemDisplayDays * 86400000) && (
-                            <span className="badge badge-new" style={{ fontSize: 9, marginLeft: 6, verticalAlign: 'middle' }}>🆕</span>
+                            <span className="badge-new" style={{ fontSize: 10, marginLeft: 6, verticalAlign: 'middle' }}>新品</span>
                           )}
                         </span>
                         {selectedRest === '__ALL__' && (
@@ -1339,7 +1335,6 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                       <div className="flex items-center gap-1 mt-1" style={{ flexWrap: 'wrap' }}>
                         {(['期間限定', '新品上市', '店長推薦'] as const).map((tag) => {
                           const isActive = item.limitedType === tag;
-                          const icons = { '期間限定': '🌸', '新品上市': '🆕', '店長推薦': '⭐' };
                           return (
                             <button
                               key={tag}
@@ -1376,7 +1371,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                               }}
                               title={isActive ? `點擊取消 ${tag}` : `標示為 ${tag} 並設為優先排序`}
                             >
-                              {icons[tag]} {tag}
+                              {tag}
                             </button>
                           );
                         })}
