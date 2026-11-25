@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef } from 'react';
 import classNames from 'classnames';
-import { Loader2, Plus, Minus, Send, X, AlertTriangle } from 'lucide-react';
+import { Loader2, Plus, Minus, Send, X, AlertTriangle, Check } from 'lucide-react';
 import {
   useStore,
   getFreeExtrasCount,
@@ -239,6 +239,7 @@ export default function ItemCustomizer() {
               <button
                 type="button"
                 key={p.name}
+                aria-pressed={store.selectedPortion === p.name}
                 className={classNames('option-card', {
                   selected: store.selectedPortion === p.name,
                 })}
@@ -272,6 +273,7 @@ export default function ItemCustomizer() {
                 <button
                   type="button"
                   key={fn}
+                  aria-pressed={store.selectedFlavors.includes(fn)}
                   className={classNames('spec-pill', {
                     selected: store.selectedFlavors.includes(fn),
                   })}
@@ -294,6 +296,7 @@ export default function ItemCustomizer() {
                 <button
                   type="button"
                   key={s}
+                  aria-pressed={store.sweetness === s}
                   className={classNames('spec-pill', {
                     selected: store.sweetness === s,
                   })}
@@ -311,6 +314,7 @@ export default function ItemCustomizer() {
                 <button
                   type="button"
                   key={i}
+                  aria-pressed={store.ice === i}
                   className={classNames('spec-pill', {
                     selected: store.ice === i,
                   })}
@@ -366,6 +370,7 @@ export default function ItemCustomizer() {
                   type="button"
                   key={e.id}
                   disabled={disabled}
+                  aria-pressed={isSelected}
                   className={classNames('option-card', {
                     selected: isSelected,
                     disabled: disabled,
@@ -382,7 +387,15 @@ export default function ItemCustomizer() {
                     cursor: disabled ? 'not-allowed' : 'pointer',
                   }}
                 >
-                  {e.name}{' '}
+                  {isSelected && (
+                    <Check
+                      size={14}
+                      strokeWidth={2.5}
+                      aria-hidden="true"
+                      style={{ color: 'var(--primary)', flexShrink: 0 }}
+                    />
+                  )}
+                  <span>{e.name}</span>{' '}
                   {freeExtrasCount !== null ? (
                     <span className="option-price" style={{ marginLeft: 6 }}>
                       {e.price > 0 ? (

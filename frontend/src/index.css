@@ -384,12 +384,15 @@ input:disabled, select:disabled {
   background: var(--surface);
   color: var(--text-primary);
   border: 1px solid var(--divider-strong);
+  -webkit-tap-highlight-color: transparent;
 }
 
-.btn-outline:hover:not(:disabled) {
-  border-color: var(--primary);
-  color: var(--primary);
-  background: var(--primary-muted);
+@media (hover: hover) and (pointer: fine) {
+  .btn-outline:hover:not(:disabled) {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-muted);
+  }
 }
 
 .btn-ghost {
@@ -448,13 +451,21 @@ input:disabled, select:disabled {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   transition: background-color 140ms var(--ease-out), border-color 140ms var(--ease-out), color 140ms var(--ease-out);
 }
 
-.chip-btn:hover {
-  background: var(--surface-hover);
-  border-color: var(--primary);
-  color: var(--primary);
+@media (hover: hover) and (pointer: fine) {
+  .chip-btn:not(.active):hover {
+    background: var(--surface-hover);
+    border-color: var(--text-muted);
+    color: var(--text-primary);
+  }
+}
+
+.chip-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .chip-btn.active {
@@ -488,7 +499,8 @@ input:disabled, select:disabled {
   padding: 10px 12px;
   min-width: 0;
   cursor: pointer;
-  transition: border-color 150ms var(--ease-out), background-color 150ms var(--ease-out), color 150ms var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 150ms var(--ease-out), background-color 150ms var(--ease-out), color 150ms var(--ease-out), transform 100ms var(--ease-out);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -508,10 +520,21 @@ input:disabled, select:disabled {
   }
 }
 
-.option-card:hover {
-  border-color: var(--primary);
-  background: var(--surface-hover);
-  color: var(--text-primary);
+@media (hover: hover) and (pointer: fine) {
+  .option-card:not(.selected):not(:disabled):hover {
+    border-color: var(--text-muted);
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+}
+
+.option-card:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.option-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .option-card.selected {
@@ -1084,12 +1107,24 @@ dialog.bottom-sheet-dialog[open] {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: border-color 140ms var(--ease-out), background-color 140ms var(--ease-out), color 140ms var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 140ms var(--ease-out), background-color 140ms var(--ease-out), color 140ms var(--ease-out), transform 100ms var(--ease-out);
 }
 
-.spec-pill:hover {
-  border-color: var(--primary);
-  background: var(--surface-hover);
+@media (hover: hover) and (pointer: fine) {
+  .spec-pill:not(.selected):hover {
+    border-color: var(--text-muted);
+    background: var(--surface-hover);
+  }
+}
+
+.spec-pill:active {
+  transform: scale(0.97);
+}
+
+.spec-pill:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .spec-pill.selected {
@@ -1216,14 +1251,17 @@ dialog.bottom-sheet-dialog[open] {
   display: flex;
   align-items: center;
   justify-content: center;
+  -webkit-tap-highlight-color: transparent;
   transition: border-color 140ms var(--ease-out), background-color 140ms var(--ease-out), color 140ms var(--ease-out);
   font-family: var(--font-sans);
 }
 
-.qty-btn:hover {
-  border-color: var(--primary);
-  background: var(--primary-muted);
-  color: var(--primary);
+@media (hover: hover) and (pointer: fine) {
+  .qty-btn:hover {
+    border-color: var(--primary);
+    background: var(--primary-muted);
+    color: var(--primary);
+  }
 }
 
 .qty-btn:active {
@@ -1329,13 +1367,16 @@ dialog.bottom-sheet-dialog[open] {
   display: flex;
   align-items: center;
   justify-content: center;
+  -webkit-tap-highlight-color: transparent;
   transition: border-color 150ms var(--ease-out), color 150ms var(--ease-out), background-color 150ms var(--ease-out);
 }
 
-.theme-toggle:hover {
-  background: var(--surface-hover);
-  color: var(--primary);
-  border-color: var(--primary);
+@media (hover: hover) and (pointer: fine) {
+  .theme-toggle:hover {
+    background: var(--surface-hover);
+    color: var(--primary);
+    border-color: var(--primary);
+  }
 }
 
 /* ═══════════════════════════════════════════
