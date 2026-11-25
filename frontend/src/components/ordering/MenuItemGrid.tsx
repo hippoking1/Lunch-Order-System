@@ -329,18 +329,19 @@ export default function MenuItemGrid() {
       {/* Custom item input */}
       <hr className="divider" />
       <div className="caption mb-2">自行輸入餐點</div>
-      <div className="flex gap-2 items-center">
+      <div className="flex gap-2 items-center flex-wrap">
         <input
           type="text"
           placeholder="餐點名稱"
           className="flex-1"
+          style={{ minWidth: '140px' }}
           value={customItemName}
           onChange={(e) => setCustomItemName(e.target.value)}
         />
         <input
           type="number"
           placeholder="單價"
-          style={{ width: '96px', flexShrink: 0 }}
+          style={{ width: '88px', flexShrink: 0 }}
           value={customItemPrice}
           onChange={(e) => setCustomItemPrice(e.target.value)}
           onKeyDown={(e) => {

@@ -195,41 +195,41 @@ export default function ItemCustomizer() {
     store.balance !== null &&
     store.balance < pricing.totalPrice;
 
-  const content = (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-3">
-        <h2 id={sheetTitleId} className="h2">
-          {store.selectedItem.name}
-        </h2>
-        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-          {hasSpecial && (
-            <>
-              <span className="badge badge-error">
-                {pricing.specialLabel || '特價'}
-              </span>
-              <s className="mono caption text-muted">
-                ${pricing.originalPrice}
-              </s>
-            </>
-          )}
-          <span
-            className="mono font-semibold"
-            style={{ color: 'var(--primary)' }}
-          >
-            ${pricing.unitPrice}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-icon"
-            aria-label="關閉客製面板"
-            onClick={handleClose}
-            style={{ width: 28, height: 28 }}
-          >
-            <X size={16} strokeWidth={1.5} />
-          </button>
-        </div>
+  const headerBlock = (
+    <div className="flex items-start justify-between gap-3">
+      <h2 id={sheetTitleId} className="h2" style={{ minWidth: 0, overflowWrap: 'break-word' }}>
+        {store.selectedItem.name}
+      </h2>
+      <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+        {hasSpecial && (
+          <>
+            <span className="badge badge-error">
+              {pricing.specialLabel || '特價'}
+            </span>
+            <s className="mono caption text-muted">${pricing.originalPrice}</s>
+          </>
+        )}
+        <span
+          className="mono font-semibold"
+          style={{ color: 'var(--primary)' }}
+        >
+          ${pricing.unitPrice}
+        </span>
+        <button
+          type="button"
+          className="btn btn-ghost btn-icon"
+          aria-label="關閉客製面板"
+          onClick={handleClose}
+          style={{ width: 32, height: 32 }}
+        >
+          <X size={16} strokeWidth={1.5} />
+        </button>
       </div>
+    </div>
+  );
 
+  const optionsBody = (
+    <div className="flex flex-col gap-4">
       {/* Portions */}
       {portions.length > 0 && (
         <div>
@@ -249,7 +249,6 @@ export default function ItemCustomizer() {
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   gap: '12px',
-                  fontFamily: 'var(--font-sans)',
                 }}
               >
                 <span>{p.name}</span>
@@ -381,7 +380,6 @@ export default function ItemCustomizer() {
                     alignItems: 'center',
                     opacity: disabled ? 0.45 : 1,
                     cursor: disabled ? 'not-allowed' : 'pointer',
-                    fontFamily: 'var(--font-sans)',
                   }}
                 >
                   {e.name}{' '}
@@ -464,52 +462,53 @@ export default function ItemCustomizer() {
           </span>
         </div>
       )}
+    </div>
+  );
 
-      {/* Receipt Footer Moment */}
-      <div className="card-section flex flex-col gap-3">
-        <div className="receipt-row">
-          <span className="caption">
-            {store.selectedItem.name} × {store.quantity}
-          </span>
-          <span className="receipt-leader" />
-          <span className="price-display price-lg">${pricing.totalPrice}</span>
-        </div>
+  const footerBlock = (
+    <div className="flex flex-col gap-3">
+      <div className="receipt-row">
+        <span className="caption truncate" style={{ minWidth: 0 }}>
+          {store.selectedItem.name} × {store.quantity}
+        </span>
+        <span className="receipt-leader" />
+        <span className="price-display price-lg">${pricing.totalPrice}</span>
+      </div>
 
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="qty-control">
-            <button
-              type="button"
-              className="qty-btn"
-              aria-label="減少數量"
-              onClick={() => store.setQuantity(store.quantity - 1)}
-            >
-              <Minus size={16} strokeWidth={1.5} />
-            </button>
-            <div className="qty-value">{store.quantity}</div>
-            <button
-              type="button"
-              className="qty-btn"
-              aria-label="增加數量"
-              onClick={() => store.setQuantity(store.quantity + 1)}
-            >
-              <Plus size={16} strokeWidth={1.5} />
-            </button>
-          </div>
-
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="qty-control">
           <button
             type="button"
-            className="btn btn-primary"
-            disabled={store.loading}
-            onClick={handleSubmit}
+            className="qty-btn"
+            aria-label="減少數量"
+            onClick={() => store.setQuantity(store.quantity - 1)}
           >
-            {store.loading ? (
-              <Loader2 className="animate-spin" size={16} strokeWidth={1.5} />
-            ) : (
-              <Send size={16} strokeWidth={1.5} />
-            )}
-            {trimmedEmp ? `以 ${trimmedEmp} 送出` : '確認送出'}
+            <Minus size={16} strokeWidth={1.5} />
+          </button>
+          <div className="qty-value">{store.quantity}</div>
+          <button
+            type="button"
+            className="qty-btn"
+            aria-label="增加數量"
+            onClick={() => store.setQuantity(store.quantity + 1)}
+          >
+            <Plus size={16} strokeWidth={1.5} />
           </button>
         </div>
+
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={store.loading}
+          onClick={handleSubmit}
+        >
+          {store.loading ? (
+            <Loader2 className="animate-spin" size={16} strokeWidth={1.5} />
+          ) : (
+            <Send size={16} strokeWidth={1.5} />
+          )}
+          {trimmedEmp ? `以 ${trimmedEmp} 送出` : '確認送出'}
+        </button>
       </div>
     </div>
   );
@@ -523,13 +522,23 @@ export default function ItemCustomizer() {
         onClose={handleClose}
         {...({ closedby: 'any' } as Record<string, string>)}
       >
-        <div className="bottom-sheet-body">
-          <div className="bottom-sheet-handle" aria-hidden="true" />
-          {content}
+        <div className="bottom-sheet-shell">
+          <div className="bottom-sheet-header">
+            <div className="bottom-sheet-handle" aria-hidden="true" />
+            {headerBlock}
+          </div>
+          <div className="bottom-sheet-scroll">{optionsBody}</div>
+          <div className="bottom-sheet-footer">{footerBlock}</div>
         </div>
       </dialog>
     );
   }
 
-  return <div className="card animate-slide-up">{content}</div>;
+  return (
+    <div className="card animate-slide-up flex flex-col gap-4">
+      {headerBlock}
+      {optionsBody}
+      <div className="card-section">{footerBlock}</div>
+    </div>
+  );
 }
