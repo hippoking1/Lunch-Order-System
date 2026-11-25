@@ -2,6 +2,7 @@
    DESIGN TOKENS — Warm Neutral Dark (Default)
    ═══════════════════════════════════════════ */
 :root {
+  color-scheme: dark;
   --bg-primary: #12110F;
   --bg-secondary: #161513;
   --bg-tertiary: #1C1A18;
@@ -68,6 +69,7 @@
    LIGHT MODE — Warm Paper & Receipt Ink
    ═══════════════════════════════════════════ */
 [data-theme="light"] {
+  color-scheme: light;
   --bg-primary: #F7F4EE;
   --bg-secondary: #FDFBF7;
   --bg-tertiary: #EFE9DF;
@@ -447,22 +449,29 @@ input:disabled, select:disabled {
   border-radius: var(--radius-sm);
   padding: 12px 14px;
   cursor: pointer;
-  transition: border-color 150ms var(--ease-out), background-color 150ms var(--ease-out);
+  transition: border-color 150ms var(--ease-out), background-color 150ms var(--ease-out), color 150ms var(--ease-out);
   display: flex;
   flex-direction: column;
   gap: 6px;
   background: var(--surface);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
   overflow: hidden;
 }
 
 .option-card:hover {
   border-color: var(--primary);
   background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .option-card.selected {
   border-color: var(--primary);
   background: var(--primary-muted);
+  color: var(--text-primary);
   box-shadow: inset 0 0 0 1px var(--primary);
 }
 

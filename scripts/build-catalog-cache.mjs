@@ -33,9 +33,11 @@ function normalizeName(name) {
 
 function dedupePortions(portions) {
   if (!Array.isArray(portions) || portions.length === 0) return [];
-  const sorted = [...portions].sort(
-    (a, b) => (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999),
-  );
+  const sorted = [...portions].sort((a, b) => {
+    const ao = a.sortOrder ?? 9999;
+    const bo = b.sortOrder ?? 9999;
+    return ao !== bo ? ao - bo : Number(a.price || 0) - Number(b.price || 0);
+  });
   const map = new Map();
   for (const p of sorted) {
     const cleanName = String(p?.name || '').trim();

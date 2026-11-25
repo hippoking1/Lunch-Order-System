@@ -297,7 +297,11 @@ export async function readFullMenuFromCollections(): Promise<{
   const sortAndDedupe = (list?: SortablePortion[]): Portion[] => {
     if (!list || list.length === 0) return [];
     return dedupePortions(
-      [...list].sort((a, b) => a.sortOrder - b.sortOrder),
+      [...list].sort((a, b) =>
+        a.sortOrder !== b.sortOrder
+          ? a.sortOrder - b.sortOrder
+          : a.price - b.price,
+      ),
     );
   };
 
