@@ -31,6 +31,23 @@ function normalizeName(name) {
     .toLowerCase();
 }
 
+function dedupePortions(portions) {
+  if (!Array.isArray(portions) || portions.length === 0) return [];
+  const sorted = [...portions].sort(
+    (a, b) => (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999),
+  );
+  const map = new Map();
+  for (const p of sorted) {
+    const cleanName = String(p?.name || '').trim();
+    const numPrice = Number(p?.price);
+    if (!cleanName || Number.isNaN(numPrice)) continue;
+    const key = normalizeName(cleanName);
+    if (!key) continue;
+    map.set(key, { name: cleanName, price: numPrice });
+  }
+  return Array.from(map.values());
+}
+
 function toCompactItems(items) {
   return items.map((it) => {
     const c = {
@@ -157,7 +174,11 @@ async function main() {
   const portionsByNorm = {};
   const portionsByLegacy = {};
   for (const { data: d } of portionDocs) {
-    const pObj = { name: d.portionName || '', price: Number(d.price || 0) };
+    const pObj = {
+      name: d.portionName || '',
+      price: Number(d.price || 0),
+      sortOrder: typeof d.sortOrder === 'number' ? d.sortOrder : 9999,
+    };
     if (!pObj.name) continue;
     if (d.menuItemId) {
       (portionsById[`${d.restaurantId}_${d.menuItemId}`] ||= []).push(pObj);
@@ -178,13 +199,14 @@ async function main() {
   for (const { id, data: d } of menuDocs) {
     if (d.isActive === false) continue;
     const norm = d.normalizedName || normalizeName(d.itemName || '');
-    const matchedPortions =
+    const matchedPortions = dedupePortions(
       portionsById[`${d.restaurantId}_${id}`] ||
-      portionsByNorm[`${d.restaurantId}_${norm}`] ||
-      (d.legacyItemId
-        ? portionsByLegacy[`${d.restaurantId}_${d.legacyItemId}`]
-        : undefined) ||
-      [];
+        portionsByNorm[`${d.restaurantId}_${norm}`] ||
+        (d.legacyItemId
+          ? portionsByLegacy[`${d.restaurantId}_${d.legacyItemId}`]
+          : undefined) ||
+        [],
+    );
 
     if (!d.isExtra) {
       const restCat = restCatMap[d.restaurantId] || '正餐';
@@ -246,6 +268,10 @@ async function main() {
   const newItemDisplayDays = newDaysDoc
     ? Number(newDaysDoc.data?.value) || 7
     : 7;
+  const balanceEnabledDoc = settingDocs.find((d) => d.id === 'BalanceEnabled');
+  const balanceEnabled = balanceEnabledDoc
+    ? Boolean(balanceEnabledDoc.data?.value)
+    : false;
 
   const names = userDocs
     .map((d) => d.id)
@@ -258,6 +284,7 @@ async function main() {
   const bundle = {
     version,
     newItemDisplayDays,
+    balanceEnabled,
     allRestaurants,
     items: toCompactItems(items),
     extras,
@@ -308,6 +335,7 @@ async function main() {
     menuVersion: version,
     employeesVersion: version,
     newItemDisplayDays,
+    balanceEnabled,
     updatedAt: now,
   });
 

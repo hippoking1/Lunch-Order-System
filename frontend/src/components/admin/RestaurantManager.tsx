@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import classNames from 'classnames';
 import {
   Store,
@@ -20,6 +19,7 @@ import { useStore } from '../../store';
 import { useToast } from '../../hooks/useToast';
 import { SWEETNESS_OPTIONS, ICE_OPTIONS } from '../../constants';
 import type { Category, Restaurant } from '../../types';
+import Modal from '../common/Modal';
 
 interface Props {
   onNavigateToImport: (restaurantId: string) => void;
@@ -215,7 +215,7 @@ export default function RestaurantManager({
     setEditForm({
       name: r.name,
       category: r.category || '正餐',
-      telephone: (menuPayload as any)?.telephones?.[r.id]?.telephone || '',
+      telephone: r.telephone || '',
     });
   };
 
@@ -518,10 +518,10 @@ export default function RestaurantManager({
               className="card flex flex-col justify-between"
               style={{
                 padding: '18px 20px',
-                border: (r as any).isActive === false ? '1.5px dashed rgba(239, 68, 68, 0.45)' : '1px solid var(--glass-border)',
-                background: (r as any).isActive === false ? 'rgba(28, 30, 38, 0.7)' : 'var(--glass)',
-                opacity: (r as any).isActive === false ? 0.88 : 1,
-                transition: 'all 0.2s ease',
+                border: (r as any).isActive === false ? '1px dashed var(--error)' : '1px solid var(--glass-border)',
+                background: (r as any).isActive === false ? 'var(--bg-tertiary)' : 'var(--glass)',
+                opacity: (r as any).isActive === false ? 0.78 : 1,
+                transition: 'border-color 160ms var(--ease-out), opacity 160ms var(--ease-out)',
               }}
             >
               <div>
@@ -666,292 +666,21 @@ export default function RestaurantManager({
         </div>
       )}
 
-      {/* Drink Options Customization Modal - Mounted via Portal to body to guarantee perfect center & solid background */}
-      {customizingDrinkRest && typeof document !== 'undefined' && createPortal(
-        <div
-          className="modal-overlay"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.85)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 99999,
-            padding: 16,
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setCustomizingDrinkRest(null);
-          }}
-        >
-          <div
-            className="animate-scale-up"
-            style={{
-              maxWidth: 580,
-              width: '100%',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-              background: '#181a20',
-              border: '2px solid var(--primary)',
-              borderRadius: 16,
-              padding: 24,
-              boxShadow: '0 25px 60px rgba(0, 0, 0, 0.85)',
-              color: '#ffffff',
-            }}
-          >
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h3 className="h3 flex items-center gap-2" style={{ color: '#ffffff', margin: 0 }}>
-                  自訂飲料選項規格
-                </h3>
-                <p className="caption" style={{ color: 'var(--primary)', fontWeight: 600, margin: '2px 0 0 0' }}>
-                  {customizingDrinkRest.name} (飲料店專屬)
-                </p>
-              </div>
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => setCustomizingDrinkRest(null)}
-                style={{ color: '#ffffff' }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Sweetness section */}
-            <div className="mb-5" style={{ background: 'rgba(255,255,255,0.03)', padding: 16, borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
-              <div className="flex justify-between items-center mb-2">
-                <span className="font-semibold text-sm" style={{ color: '#ffffff' }}>甜度選項列表 ({sweetnessList.length})</span>
-                <span className="caption" style={{ color: 'var(--text-muted)', fontSize: 11 }}>
-                  可拖曳或點擊左右箭頭調整順序，點擊 X 刪除
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {sweetnessList.map((opt, idx) => (
-                  <div
-                    key={`${opt}-${idx}`}
-                    draggable
-                    onDragStart={() => setDragSweetIdx(idx)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={() => {
-                      if (dragSweetIdx === null || dragSweetIdx === idx) return;
-                      const next = [...sweetnessList];
-                      const item = next.splice(dragSweetIdx, 1)[0];
-                      next.splice(idx, 0, item);
-                      setSweetnessList(next);
-                      setDragSweetIdx(null);
-                    }}
-                    className="flex items-center gap-1"
-                    style={{
-                      padding: '5px 8px',
-                      fontSize: 13,
-                      borderRadius: 8,
-                      background: dragSweetIdx === idx ? 'rgba(245, 166, 35, 0.2)' : 'rgba(255,255,255,0.1)',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      color: '#ffffff',
-                      cursor: 'grab',
-                      userSelect: 'none',
-                    }}
-                  >
-                    <button
-                      type="button"
-                      disabled={idx === 0}
-                      onClick={() => moveSweetness(idx, 'left')}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: idx === 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.7)',
-                        cursor: idx === 0 ? 'default' : 'pointer',
-                        padding: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}
-                      title="向左移"
-                    >
-                      <ArrowLeft size={12} />
-                    </button>
-                    <span style={{ fontWeight: 500, margin: '0 2px' }}>{opt}</span>
-                    <button
-                      type="button"
-                      disabled={idx === sweetnessList.length - 1}
-                      onClick={() => moveSweetness(idx, 'right')}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: idx === sweetnessList.length - 1 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.7)',
-                        cursor: idx === sweetnessList.length - 1 ? 'default' : 'pointer',
-                        padding: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}
-                      title="向右移"
-                    >
-                      <ArrowRight size={12} />
-                    </button>
-                    <span
-                      title="刪除"
-                      style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                      onClick={() => setSweetnessList(sweetnessList.filter((_, i) => i !== idx))}
-                    >
-                      <X size={13} style={{ opacity: 0.7, marginLeft: 3, color: '#f87171' }} />
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="新增自訂甜度 (例：僅供正常與半糖、固定甜度、二分糖)"
-                  value={newSweetItem}
-                  onChange={(e) => setNewSweetItem(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newSweetItem.trim()) {
-                      e.preventDefault();
-                      setSweetnessList([...sweetnessList, newSweetItem.trim()]);
-                      setNewSweetItem('');
-                    }
-                  }}
-                  style={{ flex: 1, fontSize: 13, background: 'rgba(0,0,0,0.4)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
-                />
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm"
-                  disabled={!newSweetItem.trim()}
-                  onClick={() => {
-                    if (newSweetItem.trim()) {
-                      setSweetnessList([...sweetnessList, newSweetItem.trim()]);
-                      setNewSweetItem('');
-                    }
-                  }}
-                >
-                  <Plus size={14} /> 新增
-                </button>
-              </div>
-            </div>
-
-            {/* Ice section */}
-            <div className="mb-5" style={{ background: 'rgba(255,255,255,0.03)', padding: 16, borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
-              <div className="flex justify-between items-center mb-2">
-                <span className="font-semibold text-sm" style={{ color: '#ffffff' }}>冰塊選項列表 ({iceList.length})</span>
-                <span className="caption" style={{ color: 'var(--text-muted)', fontSize: 11 }}>
-                  可拖曳或點擊左右箭頭調整順序，點擊 X 刪除
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {iceList.map((opt, idx) => (
-                  <div
-                    key={`${opt}-${idx}`}
-                    draggable
-                    onDragStart={() => setDragIceIdx(idx)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={() => {
-                      if (dragIceIdx === null || dragIceIdx === idx) return;
-                      const next = [...iceList];
-                      const item = next.splice(dragIceIdx, 1)[0];
-                      next.splice(idx, 0, item);
-                      setIceList(next);
-                      setDragIceIdx(null);
-                    }}
-                    className="flex items-center gap-1"
-                    style={{
-                      padding: '5px 8px',
-                      fontSize: 13,
-                      borderRadius: 8,
-                      background: dragIceIdx === idx ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      color: '#ffffff',
-                      cursor: 'grab',
-                      userSelect: 'none',
-                    }}
-                  >
-                    <button
-                      type="button"
-                      disabled={idx === 0}
-                      onClick={() => moveIce(idx, 'left')}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: idx === 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.7)',
-                        cursor: idx === 0 ? 'default' : 'pointer',
-                        padding: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}
-                      title="向左移"
-                    >
-                      <ArrowLeft size={12} />
-                    </button>
-                    <span style={{ fontWeight: 500, margin: '0 2px' }}>{opt}</span>
-                    <button
-                      type="button"
-                      disabled={idx === iceList.length - 1}
-                      onClick={() => moveIce(idx, 'right')}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: idx === iceList.length - 1 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.7)',
-                        cursor: idx === iceList.length - 1 ? 'default' : 'pointer',
-                        padding: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}
-                      title="向右移"
-                    >
-                      <ArrowRight size={12} />
-                    </button>
-                    <span
-                      title="刪除"
-                      style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                      onClick={() => setIceList(iceList.filter((_, i) => i !== idx))}
-                    >
-                      <X size={13} style={{ opacity: 0.7, marginLeft: 3, color: '#f87171' }} />
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="新增自訂冰塊 (例：完全去冰、微碎冰、固定冰量、常溫)"
-                  value={newIceItem}
-                  onChange={(e) => setNewIceItem(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newIceItem.trim()) {
-                      e.preventDefault();
-                      setIceList([...iceList, newIceItem.trim()]);
-                      setNewIceItem('');
-                    }
-                  }}
-                  style={{ flex: 1, fontSize: 13, background: 'rgba(0,0,0,0.4)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
-                />
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm"
-                  disabled={!newIceItem.trim()}
-                  onClick={() => {
-                    if (newIceItem.trim()) {
-                      setIceList([...iceList, newIceItem.trim()]);
-                      setNewIceItem('');
-                    }
-                  }}
-                >
-                  <Plus size={14} /> 新增
-                </button>
-              </div>
-            </div>
-
-            <div
-              className="flex justify-between items-center pt-3 mt-4"
-              style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}
-            >
+      {/* Drink Options Customization Modal - Native <dialog> */}
+      {customizingDrinkRest && (
+        <Modal
+          title="自訂飲料選項規格"
+          subtitle={`${customizingDrinkRest.name}（飲料店專屬）`}
+          onClose={() => setCustomizingDrinkRest(null)}
+          maxWidth={580}
+          actions={
+            <div className="flex justify-between items-center w-full gap-2 flex-wrap">
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
                 onClick={handleResetDrinkDefaults}
-                style={{ color: 'var(--text-muted)' }}
               >
-                還原系統預設選項
+                還原系統預設
               </button>
               <div className="flex gap-2">
                 <button
@@ -970,9 +699,226 @@ export default function RestaurantManager({
                 </button>
               </div>
             </div>
+          }
+        >
+          {/* Sweetness section */}
+          <div className="card-section mb-4">
+            <div className="flex justify-between items-center flex-wrap gap-2 mb-2">
+              <span className="font-semibold">甜度選項列表（{sweetnessList.length}）</span>
+              <span className="label">可拖曳或用左右箭頭調整順序</span>
+            </div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {sweetnessList.map((opt, idx) => (
+                <div
+                  key={`${opt}-${idx}`}
+                  draggable
+                  onDragStart={() => setDragSweetIdx(idx)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => {
+                    if (dragSweetIdx === null || dragSweetIdx === idx) return;
+                    const next = [...sweetnessList];
+                    const item = next.splice(dragSweetIdx, 1)[0];
+                    next.splice(idx, 0, item);
+                    setSweetnessList(next);
+                    setDragSweetIdx(null);
+                  }}
+                  className={classNames('chip-btn', { active: dragSweetIdx === idx })}
+                  style={{ cursor: 'grab', userSelect: 'none', padding: '5px 8px' }}
+                >
+                  <button
+                    type="button"
+                    disabled={idx === 0}
+                    aria-label={`將${opt}向左移`}
+                    onClick={() => moveSweetness(idx, 'left')}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'inherit',
+                      opacity: idx === 0 ? 0.3 : 0.8,
+                      cursor: idx === 0 ? 'default' : 'pointer',
+                      padding: 0,
+                      display: 'inline-flex',
+                    }}
+                  >
+                    <ArrowLeft size={12} strokeWidth={1.5} />
+                  </button>
+                  <span style={{ color: 'var(--text-primary)', margin: '0 2px' }}>{opt}</span>
+                  <button
+                    type="button"
+                    disabled={idx === sweetnessList.length - 1}
+                    aria-label={`將${opt}向右移`}
+                    onClick={() => moveSweetness(idx, 'right')}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'inherit',
+                      opacity: idx === sweetnessList.length - 1 ? 0.3 : 0.8,
+                      cursor: idx === sweetnessList.length - 1 ? 'default' : 'pointer',
+                      padding: 0,
+                      display: 'inline-flex',
+                    }}
+                  >
+                    <ArrowRight size={12} strokeWidth={1.5} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`刪除${opt}`}
+                    onClick={() => setSweetnessList(sweetnessList.filter((_, i) => i !== idx))}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--error)',
+                      cursor: 'pointer',
+                      padding: 0,
+                      marginLeft: 2,
+                      display: 'inline-flex',
+                    }}
+                  >
+                    <X size={13} strokeWidth={1.5} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="新增自訂甜度 (例：固定甜度、二分糖)"
+                value={newSweetItem}
+                onChange={(e) => setNewSweetItem(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && newSweetItem.trim()) {
+                    e.preventDefault();
+                    setSweetnessList([...sweetnessList, newSweetItem.trim()]);
+                    setNewSweetItem('');
+                  }
+                }}
+                className="flex-1"
+              />
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                disabled={!newSweetItem.trim()}
+                onClick={() => {
+                  if (newSweetItem.trim()) {
+                    setSweetnessList([...sweetnessList, newSweetItem.trim()]);
+                    setNewSweetItem('');
+                  }
+                }}
+              >
+                <Plus size={14} strokeWidth={1.5} /> 新增
+              </button>
+            </div>
           </div>
-        </div>,
-        document.body
+
+          {/* Ice section */}
+          <div className="card-section">
+            <div className="flex justify-between items-center flex-wrap gap-2 mb-2">
+              <span className="font-semibold">冰塊選項列表（{iceList.length}）</span>
+              <span className="label">可拖曳或用左右箭頭調整順序</span>
+            </div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {iceList.map((opt, idx) => (
+                <div
+                  key={`${opt}-${idx}`}
+                  draggable
+                  onDragStart={() => setDragIceIdx(idx)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => {
+                    if (dragIceIdx === null || dragIceIdx === idx) return;
+                    const next = [...iceList];
+                    const item = next.splice(dragIceIdx, 1)[0];
+                    next.splice(idx, 0, item);
+                    setIceList(next);
+                    setDragIceIdx(null);
+                  }}
+                  className={classNames('chip-btn', { active: dragIceIdx === idx })}
+                  style={{ cursor: 'grab', userSelect: 'none', padding: '5px 8px' }}
+                >
+                  <button
+                    type="button"
+                    disabled={idx === 0}
+                    aria-label={`將${opt}向左移`}
+                    onClick={() => moveIce(idx, 'left')}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'inherit',
+                      opacity: idx === 0 ? 0.3 : 0.8,
+                      cursor: idx === 0 ? 'default' : 'pointer',
+                      padding: 0,
+                      display: 'inline-flex',
+                    }}
+                  >
+                    <ArrowLeft size={12} strokeWidth={1.5} />
+                  </button>
+                  <span style={{ color: 'var(--text-primary)', margin: '0 2px' }}>{opt}</span>
+                  <button
+                    type="button"
+                    disabled={idx === iceList.length - 1}
+                    aria-label={`將${opt}向右移`}
+                    onClick={() => moveIce(idx, 'right')}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'inherit',
+                      opacity: idx === iceList.length - 1 ? 0.3 : 0.8,
+                      cursor: idx === iceList.length - 1 ? 'default' : 'pointer',
+                      padding: 0,
+                      display: 'inline-flex',
+                    }}
+                  >
+                    <ArrowRight size={12} strokeWidth={1.5} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`刪除${opt}`}
+                    onClick={() => setIceList(iceList.filter((_, i) => i !== idx))}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--error)',
+                      cursor: 'pointer',
+                      padding: 0,
+                      marginLeft: 2,
+                      display: 'inline-flex',
+                    }}
+                  >
+                    <X size={13} strokeWidth={1.5} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="新增自訂冰塊 (例：完全去冰、常溫)"
+                value={newIceItem}
+                onChange={(e) => setNewIceItem(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && newIceItem.trim()) {
+                    e.preventDefault();
+                    setIceList([...iceList, newIceItem.trim()]);
+                    setNewIceItem('');
+                  }
+                }}
+                className="flex-1"
+              />
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                disabled={!newIceItem.trim()}
+                onClick={() => {
+                  if (newIceItem.trim()) {
+                    setIceList([...iceList, newIceItem.trim()]);
+                    setNewIceItem('');
+                  }
+                }}
+              >
+                <Plus size={14} strokeWidth={1.5} /> 新增
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

@@ -56,10 +56,10 @@ function App() {
   }, [store.selectedRestaurant]);
 
   useEffect(() => {
-    if (store.selectedItem && customizerRef.current) {
+    if (isDesktop && store.selectedItem && customizerRef.current) {
       customizerRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
-  }, [store.selectedItem]);
+  }, [isDesktop, store.selectedItem]);
 
   // Mobile: determine which panel to show
   const showOrderPanel = isDesktop ? store.activeTab !== 'admin' : store.activeTab === 'order';

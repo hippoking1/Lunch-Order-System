@@ -59,6 +59,7 @@ export interface MenuPayload {
   extras: Extra[];
   specialPrices?: SpecialPrice[];
   newItemDisplayDays?: number;
+  balanceEnabled?: boolean;
 }
 
 // ── 訂單 ──

@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Phone, Copy, CheckCircle2, AlertTriangle } from 'lucide-react';
+import classNames from 'classnames';
+import { Phone, Copy, CheckCircle2, AlertTriangle, RotateCcw } from 'lucide-react';
 import { useStore } from '../../store';
 import { useToast } from '../../hooks/useToast';
+import { LS_PICKUP_PREFIX } from '../../constants';
 import type { OrderRecord } from '../../types';
 import Modal from '../common/Modal';
 
@@ -31,6 +33,61 @@ export default function RestaurantOrderCard({
   const addToast = useToast((s) => s.addToast);
   const [confirmModal, setConfirmModal] = useState<'confirm' | 'cancel' | null>(
     null,
+  );
+
+  const pickupStorageKey = `${LS_PICKUP_PREFIX}${store.date}_${restaurantId}`;
+  const [pickupState, setPickupState] = useState<{
+    key: string;
+    ids: string[];
+  }>(() => {
+    try {
+      const raw = localStorage.getItem(pickupStorageKey);
+      return {
+        key: pickupStorageKey,
+        ids: raw ? (JSON.parse(raw) as string[]) : [],
+      };
+    } catch {
+      return { key: pickupStorageKey, ids: [] };
+    }
+  });
+
+  const pickedIds = useMemo(() => {
+    if (pickupState.key === pickupStorageKey) {
+      return new Set(pickupState.ids);
+    }
+    try {
+      const raw = localStorage.getItem(pickupStorageKey);
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set<string>();
+    } catch {
+      return new Set<string>();
+    }
+  }, [pickupState, pickupStorageKey]);
+
+  const togglePicked = (orderId: string) => {
+    const next = new Set(pickedIds);
+    if (next.has(orderId)) next.delete(orderId);
+    else next.add(orderId);
+    const nextIds = Array.from(next);
+    setPickupState({ key: pickupStorageKey, ids: nextIds });
+    try {
+      localStorage.setItem(pickupStorageKey, JSON.stringify(nextIds));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const resetPicked = () => {
+    setPickupState({ key: pickupStorageKey, ids: [] });
+    try {
+      localStorage.removeItem(pickupStorageKey);
+    } catch {
+      // ignore
+    }
+  };
+
+  const pickedOrderCount = useMemo(
+    () => orders.filter((o) => pickedIds.has(o.id)).length,
+    [orders, pickedIds],
   );
 
   const confirmObj = store.confirmations?.[restaurantId];
@@ -67,7 +124,10 @@ export default function RestaurantOrderCard({
       aggMap[key].qty += o.quantity;
       aggMap[key].totalPrice += o.totalPrice;
     });
-    return Object.values(aggMap);
+    return Object.values(aggMap).sort((a, b) => {
+      const nameCmp = a.name.localeCompare(b.name, 'zh-Hant');
+      return nameCmp !== 0 ? nameCmp : a.detail.localeCompare(b.detail, 'zh-Hant');
+    });
   }, [orders, isDrink]);
 
   const borderStyle = isConfirmed
@@ -192,28 +252,73 @@ export default function RestaurantOrderCard({
           ))}
         </div>
 
-        {/* Employee detail table (for distribution) */}
-        <div className="label mb-2">員工清單明細（發餐用）</div>
+        {/* Employee detail table (for distribution with pickup checklist) */}
+        <div className="flex justify-between items-center gap-2 mb-2">
+          <div className="flex items-center gap-2">
+            <span className="label">員工清單明細（發餐用，點擊打勾）</span>
+            <span
+              className={classNames(
+                'badge mono',
+                pickedOrderCount === orders.length && orders.length > 0
+                  ? 'badge-success'
+                  : 'badge-default',
+              )}
+              style={{ fontSize: 11 }}
+            >
+              已領 {pickedOrderCount}/{orders.length}
+            </span>
+          </div>
+          {pickedOrderCount > 0 && (
+            <button
+              type="button"
+              className="chip-btn"
+              onClick={resetPicked}
+              title="重設本餐廳領餐勾選狀態"
+            >
+              <RotateCcw size={11} strokeWidth={1.5} />
+              重設
+            </button>
+          )}
+        </div>
         <table className="data-table">
           <tbody>
-            {orders.map((o, idx) => (
-              <tr key={idx}>
-                <td style={{ minWidth: '72px' }}>
-                  <div className="font-semibold">{o.employee}</div>
-                </td>
-                <td>
-                  <div style={{ fontWeight: 500 }}>
-                    {o.item} <span className="mono">x{o.quantity}</span>
-                  </div>
-                  {getOrderDetailsInfo(o, isDrink) && (
-                    <div className="label">
-                      備註：{getOrderDetailsInfo(o, isDrink)}
+            {orders.map((o) => {
+              const isPicked = pickedIds.has(o.id);
+              return (
+                <tr
+                  key={o.id}
+                  className={classNames('pickup-row', { picked: isPicked })}
+                  onClick={() => togglePicked(o.id)}
+                >
+                  <td style={{ width: '28px', paddingRight: '6px' }}>
+                    <input
+                      type="checkbox"
+                      className="checkbox-styled"
+                      checked={isPicked}
+                      aria-label={`標記 ${o.employee} 的 ${o.item} 已領取`}
+                      onChange={() => togglePicked(o.id)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </td>
+                  <td style={{ minWidth: '68px' }}>
+                    <div className="font-semibold pickup-text">{o.employee}</div>
+                  </td>
+                  <td>
+                    <div className="pickup-text" style={{ fontWeight: 500 }}>
+                      {o.item} <span className="mono">x{o.quantity}</span>
                     </div>
-                  )}
-                </td>
-                <td className="mono font-semibold text-right">${o.totalPrice}</td>
-              </tr>
-            ))}
+                    {getOrderDetailsInfo(o, isDrink) && (
+                      <div className="label pickup-text">
+                        備註：{getOrderDetailsInfo(o, isDrink)}
+                      </div>
+                    )}
+                  </td>
+                  <td className="mono font-semibold text-right pickup-text">
+                    ${o.totalPrice}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

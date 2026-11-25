@@ -38,7 +38,10 @@ function EditableNote({
           value={note}
           onChange={(e) => setNote(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') handleSave();
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+              e.preventDefault();
+              handleSave();
+            }
             if (e.key === 'Escape') {
               setNote(initialNote);
               setIsEditing(false);

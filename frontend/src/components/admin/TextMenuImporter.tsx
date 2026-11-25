@@ -226,7 +226,10 @@ RestaurantID,ItemID,PortionName,Price
     const res = await adminCleanupDuplicates(targetRest);
     setCleaning(false);
     if (res.ok) {
-      addToast('success', `清理完成！共清除了 ${res.deletedCount || 0} 筆重複品項`);
+      addToast(
+        'success',
+        `清理完成：移除 ${res.deletedCount || 0} 筆重複品項、${res.deletedPortionsCount || 0} 筆重複/孤兒份量`,
+      );
     } else {
       addToast('error', res.error || '清理失敗');
     }
@@ -393,28 +396,42 @@ RestaurantID,ItemID,PortionName,Price
     <div className="flex flex-col gap-5">
       {/* Input Section */}
       <div className="card">
-        <div className="flex justify-between items-center mb-3">
+        <div className="flex justify-between items-center flex-wrap gap-2 mb-3">
           <div className="h3">
             <FileText size={16} strokeWidth={1.5} />
             貼上菜單內容 / 雙表格 CSV
           </div>
-          <button
-            className="btn btn-outline btn-sm"
-            onClick={() => {
-              setText(SAMPLE_CSV);
-              setSelectedRestaurant('4');
-              addToast('info', '已帶入老賴茶棧 CSV 測試範例');
-            }}
-          >
-            <Sparkles size={14} /> 帶入老賴 CSV 範例
-          </button>
-          <button
-            className="btn btn-outline btn-sm flex items-center gap-1"
-            onClick={handleCopyGemPrompt}
-            title="複製已為此餐廳量身設定的 Gemini Gem 分析 Prompt"
-          >
-            <Copy size={14} /> 複製 Gem 專用 Prompt
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={handleCleanupDuplicates}
+              disabled={cleaning}
+              title="立即掃描並清理重複品項與重複/孤兒份量"
+            >
+              <RefreshCw size={14} strokeWidth={1.5} className={cleaning ? 'animate-spin' : undefined} />
+              清理重複品項與份量
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => {
+                setText(SAMPLE_CSV);
+                setSelectedRestaurant('4');
+                addToast('info', '已帶入老賴茶棧 CSV 測試範例');
+              }}
+            >
+              <Sparkles size={14} strokeWidth={1.5} /> 帶入老賴 CSV 範例
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm flex items-center gap-1"
+              onClick={handleCopyGemPrompt}
+              title="複製已為此餐廳量身設定的 Gemini Gem 分析 Prompt"
+            >
+              <Copy size={14} strokeWidth={1.5} /> 複製 Gem 專用 Prompt
+            </button>
+          </div>
         </div>
         <p className="caption mb-2">
           支援雙表格 CSV 格式 (<code>RestaurantID,ItemID,SubCategory,ItemName,Flavors,Price</code> 及 <code>RestaurantID,ItemID,PortionName,Price</code>)，貼入後系統將自動比對現有菜單並將異動匯入<b>待審變更</b>。
@@ -467,11 +484,11 @@ RestaurantID,ItemID,PortionName,Price
 
       {/* Pending Changes Review Section */}
       {parsedItems.length > 0 && (
-        <div className="card animate-slide-up" style={{ border: '2px solid var(--primary)' }}>
-          <div className="flex justify-between items-center mb-3">
+        <div className="card animate-slide-up" style={{ border: '1px solid var(--primary)' }}>
+          <div className="flex justify-between items-center flex-wrap gap-3 mb-3">
             <div>
               <div className="h3 flex items-center gap-2" style={{ color: 'var(--primary)' }}>
-                <RefreshCw size={20} className="animate-spin-slow" />
+                <RefreshCw size={16} strokeWidth={1.5} />
                 待審變更審視面板 (Pending Changes)
               </div>
               <p className="caption mt-1">
@@ -484,9 +501,9 @@ RestaurantID,ItemID,PortionName,Price
                 className="btn btn-outline btn-sm"
                 onClick={handleCleanupDuplicates}
                 disabled={cleaning}
-                title="掃描同餐廳同品項的重複文件並一鍵清除多餘品項"
+                title="掃描同餐廳重複品項與重複/孤兒份量並一鍵清除"
               >
-                {cleaning ? <RefreshCw size={14} className="animate-spin" /> : '一鍵清理重複品項'}
+                {cleaning ? <RefreshCw size={14} className="animate-spin" /> : '一鍵清理重複品項與份量'}
               </button>
               <button className="btn btn-ghost btn-sm" onClick={selectAll}>
                 全選異動
@@ -568,36 +585,38 @@ RestaurantID,ItemID,PortionName,Price
 
                         {/* Detailed Field Diffs */}
                         {hasDiffs ? (
-                          <div className="flex flex-wrap gap-2 mt-1 pl-7">
+                          <div className="flex flex-wrap gap-2 mt-1" style={{ paddingLeft: 28 }}>
                             {item.fieldDiffs?.map((diff, di) => (
                               <div
                                 key={di}
-                                className="flex items-center gap-1.5"
+                                className="flex items-center gap-1"
                                 style={{
-                                  background: 'rgba(59, 130, 246, 0.12)',
-                                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                                  background: 'var(--bg-tertiary)',
+                                  border: '1px solid var(--divider-strong)',
                                   padding: '3px 10px',
-                                  borderRadius: 6,
+                                  borderRadius: 'var(--radius-xs)',
                                   fontSize: 12,
                                 }}
                               >
-                                <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
                                   {diff.label}:
                                 </span>
-                                <span style={{ color: '#ef4444', textDecoration: 'line-through', opacity: 0.85 }}>
+                                <span className="mono" style={{ color: 'var(--error)', textDecoration: 'line-through', opacity: 0.85 }}>
                                   {diff.oldVal}
                                 </span>
-                                <span style={{ color: 'var(--text-muted)' }}>➔</span>
-                                <span style={{ color: '#10b981', fontWeight: 700 }}>
+                                <span style={{ color: 'var(--text-muted)' }}>→</span>
+                                <span className="mono" style={{ color: 'var(--success)', fontWeight: 600 }}>
                                   {diff.newVal}
                                 </span>
                               </div>
                             ))}
                           </div>
                         ) : item.portions && item.portions.length > 0 ? (
-                          <div className="caption pl-7 text-muted" style={{ fontSize: 12 }}>
+                          <div className="caption text-muted" style={{ fontSize: 12, paddingLeft: 28 }}>
                             <b>獨立份量：</b>
-                            {item.portions.map((p) => `${p.name} $${p.price}`).join(' / ')}
+                            <span className="mono">
+                              {item.portions.map((p) => `${p.name} $${p.price}`).join(' · ')}
+                            </span>
                           </div>
                         ) : null}
 

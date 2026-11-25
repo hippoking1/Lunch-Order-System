@@ -1,6 +1,13 @@
 import * as admin from 'firebase-admin';
 import { HttpsError } from 'firebase-functions/v2/https';
-import { normalizeName, getBaseItemName } from './shared/normalize';
+import {
+  normalizeName,
+  getBaseItemName,
+  dedupePortions,
+  planPortionSync,
+  planDuplicatePortionsCleanup,
+  StoredPortionRecord,
+} from './shared/normalize';
 import { MenuItemDoc, Portion, SpecialPriceDoc } from './shared/types';
 
 const db = admin.firestore();
@@ -24,16 +31,31 @@ export async function getFullMenuPayloadInternal() {
   });
 
   const portionSnap = await db.collection('itemPortions').get();
-  const portionsMap: Record<string, Portion[]> = {};
+  type SortablePortion = Portion & { sortOrder: number };
+  const portionsById: Record<string, SortablePortion[]> = {};
+  const portionsMap: Record<string, SortablePortion[]> = {};
   portionSnap.docs.forEach(doc => {
     const d = doc.data();
+    const pObj: SortablePortion = {
+      name: d.portionName || '',
+      price: Number(d.price || 0),
+      sortOrder: typeof d.sortOrder === 'number' ? d.sortOrder : 9999,
+    };
+    if (!pObj.name) return;
+    if (d.menuItemId) {
+      const idKey = `${d.restaurantId}_${d.menuItemId}`;
+      if (!portionsById[idKey]) portionsById[idKey] = [];
+      portionsById[idKey].push(pObj);
+    }
     const key = `${d.restaurantId}_${d.normalizedName || normalizeName(d.menuItemName)}`;
     if (!portionsMap[key]) portionsMap[key] = [];
-    portionsMap[key].push({
-      name: d.portionName || '',
-      price: Number(d.price || 0)
-    });
+    portionsMap[key].push(pObj);
   });
+
+  const sortAndDedupe = (list?: SortablePortion[]): Portion[] => {
+    if (!list || list.length === 0) return [];
+    return dedupePortions([...list].sort((a, b) => a.sortOrder - b.sortOrder));
+  };
 
   const menuSnap = await db.collection('menuItems').where('isActive', '==', true).get();
   const items: any[] = [];
@@ -47,7 +69,9 @@ export async function getFullMenuPayloadInternal() {
     }
 
     const normKey = `${d.restaurantId}_${d.normalizedName || normalizeName(d.itemName)}`;
-    const itemPortions = portionsMap[normKey] || [];
+    const itemPortions = sortAndDedupe(
+      portionsById[`${d.restaurantId}_${doc.id}`] || portionsMap[normKey],
+    );
 
     if (!d.isExtra) {
       const restCat = restCategoryMap[d.restaurantId] || '正餐';
@@ -198,6 +222,11 @@ export async function addOrUpdateMenuItemInternal(data: any) {
     endDate: data.endDate || '',
   };
 
+  const prevData = existingDoc?.data();
+  const prevName = String(prevData?.itemName || '');
+  const prevNorm = String(prevData?.normalizedName || normalizeName(prevName));
+  const legacyItemId = String(prevData?.legacyItemId || data.itemId || '');
+
   if (existingDoc) {
     docId = existingDoc.id;
     await existingDoc.ref.update(payload);
@@ -211,25 +240,46 @@ export async function addOrUpdateMenuItemInternal(data: any) {
   if (Array.isArray(data.portions)) {
     const pSnap = await db.collection('itemPortions')
       .where('restaurantId', '==', restaurantId)
-      .where('normalizedName', '==', normalized)
       .get();
-    const batch = db.batch();
-    pSnap.docs.forEach(d => batch.delete(d.ref));
-    await batch.commit();
-
-    const addBatch = db.batch();
-    for (const p of data.portions) {
-      const pRef = db.collection('itemPortions').doc();
-      addBatch.set(pRef, {
-        restaurantId,
-        menuItemId: docId,
-        menuItemName: itemName,
-        normalizedName: normalized,
-        portionName: p.name,
-        price: Number(p.price || 0)
+    const existingPortionDocs: StoredPortionRecord[] = pSnap.docs.map(d => {
+      const dat = d.data();
+      return {
+        id: d.id,
+        restaurantId: String(dat.restaurantId || ''),
+        menuItemId: dat.menuItemId ? String(dat.menuItemId) : undefined,
+        menuItemName: dat.menuItemName ? String(dat.menuItemName) : undefined,
+        normalizedName: dat.normalizedName ? String(dat.normalizedName) : undefined,
+        legacyItemId: dat.legacyItemId ? String(dat.legacyItemId) : undefined,
+        portionName: dat.portionName ? String(dat.portionName) : undefined,
+        price: Number(dat.price || 0),
+      };
+    });
+    const plan = planPortionSync({
+      restaurantId,
+      menuItemId: docId,
+      itemName,
+      previousItemName: prevName,
+      previousNormalizedName: prevNorm,
+      legacyItemId,
+      nextPortions: data.portions,
+      existingPortionDocs,
+    });
+    if (plan.toDeleteIds.length > 0 || plan.toUpsert.length > 0) {
+      const batch = db.batch();
+      plan.toDeleteIds.forEach(delId => batch.delete(db.collection('itemPortions').doc(delId)));
+      plan.toUpsert.forEach(u => {
+        batch.set(db.collection('itemPortions').doc(u.docId), {
+          restaurantId: u.restaurantId,
+          menuItemId: u.menuItemId,
+          menuItemName: u.menuItemName,
+          normalizedName: u.normalizedName,
+          portionName: u.portionName,
+          price: u.price,
+          sortOrder: u.sortOrder,
+        });
       });
+      await batch.commit();
     }
-    await addBatch.commit();
   }
 
   return { success: true, itemId: docId };
@@ -315,18 +365,21 @@ export async function applyMenuChangesInternal(restaurantId: string, changes: an
       }
     } else if (change.type === 'update') {
       if (targetDoc) {
-        // 現有品項更新：直接 update 現有 doc，絕不新建重複文件！
-        const updatePayload: any = {
+        // 現有品項更新：直接 update 現有 doc 並同步更新份量，絕不新建重複文件！
+        await addOrUpdateMenuItemInternal({
+          itemId: targetDoc.id,
+          restaurantId: targetRestId,
           itemName,
-          normalizedName: normalizeName(itemName),
           price: Number(change.price || 0),
           category: resolvedCategory,
-          isActive: true
-        };
-        if (change.subCategory !== undefined) updatePayload.subCategory = change.subCategory;
-        if (change.flavors !== undefined) updatePayload.flavors = change.flavors;
-        if (change.limitedType !== undefined) updatePayload.limitedType = change.limitedType;
-        await targetDoc.ref.update(updatePayload);
+          subCategory: change.subCategory !== undefined ? change.subCategory : targetDoc.data()?.subCategory || '',
+          flavors: change.flavors !== undefined ? change.flavors : targetDoc.data()?.flavors || '',
+          limitedType: change.limitedType !== undefined ? change.limitedType : targetDoc.data()?.limitedType || '',
+          image: targetDoc.data()?.image || '',
+          startDate: targetDoc.data()?.startDate || '',
+          endDate: targetDoc.data()?.endDate || '',
+          ...(Array.isArray(change.portions) ? { portions: change.portions } : {}),
+        });
         applied++;
       } else {
         // 若找不到原品項，才 fallback 為新建
@@ -343,15 +396,21 @@ export async function applyMenuChangesInternal(restaurantId: string, changes: an
         applied++;
       }
     } else if (change.type === 'add') {
-      // 新增品項：若核心名稱相同已存在，自動轉為更新，防止重複添加！
+      // 新增品項：若核心名稱相同已存在，自動轉為更新並同步份量，防止重複添加！
       if (targetDoc) {
-        await targetDoc.ref.update({
+        await addOrUpdateMenuItemInternal({
+          itemId: targetDoc.id,
+          restaurantId: targetRestId,
           itemName,
-          normalizedName: normalizeName(itemName),
           price: Number(change.price || 0),
           category: resolvedCategory,
           subCategory: change.subCategory || targetDoc.data()?.subCategory || '',
-          isActive: true
+          flavors: change.flavors !== undefined ? change.flavors : targetDoc.data()?.flavors || '',
+          limitedType: change.limitedType !== undefined ? change.limitedType : targetDoc.data()?.limitedType || '',
+          image: targetDoc.data()?.image || '',
+          startDate: targetDoc.data()?.startDate || '',
+          endDate: targetDoc.data()?.endDate || '',
+          ...(Array.isArray(change.portions) ? { portions: change.portions } : {}),
         });
       } else {
         await addOrUpdateMenuItemInternal({
@@ -372,14 +431,16 @@ export async function applyMenuChangesInternal(restaurantId: string, changes: an
   return { success: true, applied };
 }
 
-// ── 清除資料庫內同餐廳重複品項 ──────────────────────────
+// ── 清除資料庫內同餐廳重複品項與孤兒/重複份量 ──────────────────────────
 export async function cleanupDuplicateMenuItemsInternal(restaurantId?: string) {
   let query: admin.firestore.Query = db.collection('menuItems');
+  let portionQuery: admin.firestore.Query = db.collection('itemPortions');
   if (restaurantId && restaurantId !== '__ALL__') {
     query = query.where('restaurantId', '==', restaurantId);
+    portionQuery = portionQuery.where('restaurantId', '==', restaurantId);
   }
 
-  const snap = await query.get();
+  const [snap, portionSnap] = await Promise.all([query.get(), portionQuery.get()]);
   const map = new Map<string, admin.firestore.QueryDocumentSnapshot[]>();
 
   snap.docs.forEach((doc) => {
@@ -394,6 +455,7 @@ export async function cleanupDuplicateMenuItemsInternal(restaurantId?: string) {
 
   let deletedCount = 0;
   const toDelete: admin.firestore.DocumentReference[] = [];
+  const deletedMenuItemIds = new Set<string>();
 
   for (const [, docs] of map.entries()) {
     if (docs.length > 1) {
@@ -413,10 +475,49 @@ export async function cleanupDuplicateMenuItemsInternal(restaurantId?: string) {
       // 保留 docs[0]，將其餘多餘重複項刪除
       for (let i = 1; i < docs.length; i++) {
         toDelete.push(docs[i].ref);
+        deletedMenuItemIds.add(docs[i].id);
         deletedCount++;
       }
     }
   }
+
+  const survivingItems = snap.docs
+    .filter(d => !deletedMenuItemIds.has(d.id))
+    .map(d => {
+      const dat = d.data();
+      return {
+        id: d.id,
+        restaurantId: String(dat.restaurantId || ''),
+        itemName: String(dat.itemName || ''),
+        normalizedName: dat.normalizedName ? String(dat.normalizedName) : undefined,
+        legacyItemId: dat.legacyItemId ? String(dat.legacyItemId) : undefined,
+        isActive: dat.isActive !== false,
+      };
+    });
+
+  const portionDocs: StoredPortionRecord[] = portionSnap.docs.map(d => {
+    const dat = d.data();
+    return {
+      id: d.id,
+      restaurantId: String(dat.restaurantId || ''),
+      menuItemId: dat.menuItemId ? String(dat.menuItemId) : undefined,
+      menuItemName: dat.menuItemName ? String(dat.menuItemName) : undefined,
+      normalizedName: dat.normalizedName ? String(dat.normalizedName) : undefined,
+      legacyItemId: dat.legacyItemId ? String(dat.legacyItemId) : undefined,
+      portionName: dat.portionName ? String(dat.portionName) : undefined,
+      price: Number(dat.price || 0),
+    };
+  });
+
+  const portionCleanup = planDuplicatePortionsCleanup({
+    survivingItems,
+    deletedMenuItemIds,
+    portionDocs,
+  });
+
+  portionCleanup.toDeleteIds.forEach(pid => {
+    toDelete.push(db.collection('itemPortions').doc(pid));
+  });
 
   const chunkSize = 400;
   for (let i = 0; i < toDelete.length; i += chunkSize) {
@@ -426,7 +527,12 @@ export async function cleanupDuplicateMenuItemsInternal(restaurantId?: string) {
     await batch.commit();
   }
 
-  return { success: true, duplicateGroups: map.size, deletedCount };
+  return {
+    success: true,
+    duplicateGroups: map.size,
+    deletedCount,
+    deletedPortionsCount: portionCleanup.toDeleteIds.length,
+  };
 }
 
 // ── 更新飲料餐廳自訂甜度與冰塊選項 ───────────────────────

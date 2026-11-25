@@ -44,13 +44,20 @@ export default function MenuItemGrid() {
     if (!menuPayload?.specialPrices) {
       return new Map<string, { specialPrice: number; label: string; originalPrice: number }>();
     }
+    const itemsById = new Map(menuPayload.items.map((it) => [`${it.restaurantId}-${it.id}`, it]));
     const map = new Map<string, { specialPrice: number; label: string; originalPrice: number }>();
     menuPayload.specialPrices.forEach((sp) => {
-      map.set(`${sp.restaurantId}-${sp.itemId}`, {
-        specialPrice: sp.specialPrice,
-        label: sp.label,
-        originalPrice: sp.originalPrice,
-      });
+      const key = `${sp.restaurantId}-${sp.itemId}`;
+      const matchedItem = itemsById.get(key);
+      const firstPortionName = matchedItem?.portions?.[0]?.name || '';
+      // 僅套用全品項特價或對應預設第一份量的特價至品項卡片，避免大瓶特價覆蓋單杯標價
+      if (!sp.portionName || sp.portionName === firstPortionName) {
+        map.set(key, {
+          specialPrice: sp.specialPrice,
+          label: sp.label,
+          originalPrice: sp.originalPrice,
+        });
+      }
     });
     return map;
   }, [menuPayload]);
@@ -231,9 +238,38 @@ export default function MenuItemGrid() {
         />
       </div>
 
+      {/* Sticky Subcategory Quick-Jump Chips (shown when >= 3 groups) */}
+      {subKeys.length >= 3 && !search.trim() && (
+        <div className="subcat-nav" role="navigation" aria-label="餐點子分類快速跳轉">
+          {subKeys.map((sub, idx) => (
+            <button
+              key={sub}
+              type="button"
+              className="chip-btn"
+              onClick={() => {
+                const el = document.getElementById(`menu-sub-${idx}`);
+                el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+            >
+              {sub === FEATURED_KEY ? '優先推薦' : sub}
+              <span className="mono" style={{ opacity: 0.65 }}>
+                {groupedItems[sub].length}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Grouped items */}
-      {subKeys.map((sub) => (
-        <div key={sub} className="mb-4">
+      {subKeys.map((sub, sectionIdx) => (
+        <div
+          key={sub}
+          id={`menu-sub-${sectionIdx}`}
+          className={classNames('mb-4', {
+            'menu-sub-section-deferred': sectionIdx >= 2,
+          })}
+          style={{ scrollMarginTop: '56px' }}
+        >
           {(sub !== '其他' || subKeys.length > 1) && (
             <div className="caption mb-2 flex items-center gap-1">
               {sub === FEATURED_KEY ? (
@@ -307,6 +343,12 @@ export default function MenuItemGrid() {
           style={{ width: '96px', flexShrink: 0 }}
           value={customItemPrice}
           onChange={(e) => setCustomItemPrice(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+              e.preventDefault();
+              handleCustomItem();
+            }
+          }}
         />
         <button
           type="button"

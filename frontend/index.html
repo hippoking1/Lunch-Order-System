@@ -1,53 +1,50 @@
 <!doctype html>
-<html lang="zh-TW">
+<html lang="zh-Hant-TW">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Lifestyle Premium Dining</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#12110F" />
+    <title>公司團購訂餐系統</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <script>
-      window.onerror = function(msg, url, line, col, err) {
-        var el = document.getElementById('error-log');
-        if(el) {
-          el.innerHTML += '<p style="color:red">Error: ' + msg + ' at line ' + line + '</p>';
-          el.style.display = 'block';
-        }
-      };
+      (function () {
+        try {
+          var saved = localStorage.getItem('lunch-order-theme');
+          if (saved === 'light') {
+            document.documentElement.setAttribute('data-theme', 'light');
+            document.documentElement.style.backgroundColor = '#F7F4EE';
+            document.documentElement.style.color = '#1F1B16';
+            var meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute('content', '#F7F4EE');
+          } else {
+            document.documentElement.style.backgroundColor = '#12110F';
+            document.documentElement.style.color = '#EFE9DE';
+          }
+        } catch (e) {}
+      })();
     </script>
   </head>
   <body>
-    <div id="error-log" style="display:none; padding:20px; font-family:sans-serif; background:#fee; border-bottom:1px solid #f99;"></div>
     <div id="root">
-      <div style="padding:40px; text-align:center; font-family:sans-serif;">Booting App...</div>
+      <div
+        style="
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-family: 'Noto Sans TC', system-ui, sans-serif;
+          font-size: 14px;
+          opacity: 0.7;
+        "
+      >
+        載入訂餐系統中...
+      </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>
-    <!-- GAS mock wrapper for local dev -->
-    <script>
-      if(typeof google === 'undefined') {
-        window.google = {
-          script: {
-            run: {
-              withSuccessHandler: function(cb) {
-                return {
-                  withFailureHandler: function() { return this; },
-                  getInitialData: function() { setTimeout(() => cb({
-                    date: '2026-04-09',
-                    telephones: [{id:'R1', name:'Test Rest', telephone:'02-1234567'}],
-                    employees: ['Amy', 'Bob', 'Charlie'],
-                    summary: [],
-                    menuPayload: {
-                      restaurants: [{id:'R1', name:'Test Rest', category:'正餐'}],
-                      items: [{id:'M1', restaurantId:'R1', name:'排骨飯', price:100, category:'正餐', flavors:'辣,不辣', portions:[]}],
-                      extras: [{id:'E1', restaurantId:'R1', name:'加飯', price:15, type:'extra', group:'加點'}]
-                    }
-                  }), 500); },
-                  getEmployeeBalance: function(name) { setTimeout(() => cb(Math.floor(Math.random()*2000)-500), 500); },
-                  submitOrder: function(pl) { setTimeout(() => cb(), 800); }
-                };
-              }
-            }
-          }
-        };
-      }
-    </script>
   </body>
 </html>

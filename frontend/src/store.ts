@@ -11,7 +11,12 @@ import {
 } from 'firebase/auth';
 import type { Unsubscribe } from 'firebase/firestore';
 import { auth } from './firebase';
-import { LS_LAST_EMPLOYEE_KEY } from './constants';
+import {
+  LS_LAST_EMPLOYEE_KEY,
+  LS_DRINK_PREF_KEY,
+  SWEETNESS_OPTIONS,
+  ICE_OPTIONS,
+} from './constants';
 import {
   getTodayDateString,
   loadCatalogWithCache,
@@ -42,6 +47,7 @@ import {
   setSpecialPriceApi,
   removeSpecialPriceApi,
   updateNewItemDisplayDaysApi,
+  updateBalanceEnabledApi,
   cleanupDuplicateMenuItemsApi,
   previewOrdersInRangeApi,
   deleteOrdersInRangeApi,
@@ -268,6 +274,7 @@ interface AppState {
   adminData: AdminData | null;
   adminLoading: boolean;
   newItemDisplayDays: number;
+  balanceEnabled: boolean;
   allRestaurants: Restaurant[];
 
   // Actions
@@ -289,7 +296,11 @@ interface AppState {
   setOption: (key: string, val: string | boolean) => void;
   setCustomItemName: (name: string) => void;
   setCustomItemPrice: (price: string) => void;
-  submitOrder: () => Promise<{ ok: boolean; error?: string }>;
+  submitOrder: () => Promise<{
+    ok: boolean;
+    error?: string;
+    balanceInsufficient?: boolean;
+  }>;
   savePayment: (emp: string, paid: number, change: number) => Promise<void>;
   setChangeGiven: (emp: string, isGiven: boolean) => Promise<void>;
   confirmRestaurant: (restId: string) => Promise<void>;
@@ -370,6 +381,9 @@ interface AppState {
   adminUpdateNewItemDisplayDays: (
     days: number,
   ) => Promise<{ ok: boolean; error?: string }>;
+  adminUpdateBalanceEnabled: (
+    enabled: boolean,
+  ) => Promise<{ ok: boolean; error?: string }>;
   adminAddExtra: (
     data: {
       restaurantId: string;
@@ -399,7 +413,12 @@ interface AppState {
   }) => Promise<{ ok: boolean; error?: string }>;
   adminCleanupDuplicates: (
     restaurantId?: string,
-  ) => Promise<{ ok: boolean; deletedCount?: number; error?: string }>;
+  ) => Promise<{
+    ok: boolean;
+    deletedCount?: number;
+    deletedPortionsCount?: number;
+    error?: string;
+  }>;
   adminPreviewOrdersInRange: (
     startDate: string,
     endDate: string,
@@ -415,6 +434,38 @@ interface AppState {
     deletedLocks?: number;
     error?: string;
   }>;
+}
+
+// ── Drink Preference Memory (per employee) ────────────
+
+interface DrinkPref {
+  sweetness: string;
+  ice: string;
+}
+
+function readDrinkPref(employee: string): DrinkPref | null {
+  try {
+    const raw = localStorage.getItem(LS_DRINK_PREF_KEY);
+    if (!raw) return null;
+    const map = JSON.parse(raw) as Record<string, DrinkPref>;
+    const key = employee.trim() || '__default__';
+    return map[key] || map.__default__ || null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDrinkPref(employee: string, pref: DrinkPref): void {
+  try {
+    const raw = localStorage.getItem(LS_DRINK_PREF_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, DrinkPref>) : {};
+    const key = employee.trim() || '__default__';
+    map[key] = pref;
+    map.__default__ = pref;
+    localStorage.setItem(LS_DRINK_PREF_KEY, JSON.stringify(map));
+  } catch {
+    // ignore storage errors
+  }
 }
 
 // ── Realtime Subscription Tracker ─────────────────────
@@ -453,6 +504,8 @@ export const useStore = create<AppState>((set, get) => {
       allRestaurants: filtered.allRestaurants,
       telephones: filtered.telephones,
       newItemDisplayDays: filtered.newItemDisplayDays,
+      balanceEnabled: filtered.balanceEnabled,
+      ...(!filtered.balanceEnabled ? { useBalance: false } : {}),
       adminData: {
         menuPayload: filtered.menuPayload,
         specialPrices: filtered.menuPayload.specialPrices || [],
@@ -498,6 +551,7 @@ export const useStore = create<AppState>((set, get) => {
     adminData: null,
     adminLoading: false,
     newItemDisplayDays: 7,
+    balanceEnabled: false,
     allRestaurants: [],
     frequentOrders: [],
     frequentOrdersLoading: false,
@@ -521,6 +575,8 @@ export const useStore = create<AppState>((set, get) => {
           menuPayload: catalog.menuPayload,
           allRestaurants: catalog.allRestaurants,
           newItemDisplayDays: catalog.newItemDisplayDays,
+          balanceEnabled: catalog.balanceEnabled,
+          ...(!catalog.balanceEnabled ? { useBalance: false } : {}),
           selectedCategory: defaultCategory,
         });
 
@@ -688,6 +744,34 @@ export const useStore = create<AppState>((set, get) => {
           .filter(Boolean);
         if (fArr.length > 0) defaultFlavor = [fArr[0]];
       }
+
+      const state = get();
+      const currentRest = state.menuPayload?.restaurants.find(
+        (r) => r.id === state.selectedRestaurant,
+      );
+      const restSweetOpts: readonly string[] =
+        currentRest?.sweetnessOptions && currentRest.sweetnessOptions.length > 0
+          ? currentRest.sweetnessOptions
+          : SWEETNESS_OPTIONS;
+      const restIceOpts: readonly string[] =
+        currentRest?.iceOptions && currentRest.iceOptions.length > 0
+          ? currentRest.iceOptions
+          : ICE_OPTIONS;
+
+      const savedPref = readDrinkPref(state.selectedEmployee);
+      const defaultSweetness =
+        savedPref?.sweetness && restSweetOpts.includes(savedPref.sweetness)
+          ? savedPref.sweetness
+          : restSweetOpts.includes('正常')
+            ? '正常'
+            : restSweetOpts[0] || '正常';
+      const defaultIce =
+        savedPref?.ice && restIceOpts.includes(savedPref.ice)
+          ? savedPref.ice
+          : restIceOpts.includes('正常')
+            ? '正常'
+            : restIceOpts[0] || '正常';
+
       set({
         selectedItem: item,
         selectedPortion: item?.portions?.[0]?.name || '',
@@ -695,8 +779,8 @@ export const useStore = create<AppState>((set, get) => {
         selectedExtras: [],
         selectedSingleExtras: {},
         quantity: 1,
-        sweetness: '正常',
-        ice: '正常',
+        sweetness: defaultSweetness,
+        ice: defaultIce,
         note: '',
       });
     },
@@ -717,7 +801,13 @@ export const useStore = create<AppState>((set, get) => {
         selectedSingleExtras: { ...s.selectedSingleExtras, [group]: id },
       })),
 
-    setOption: (key, val) => set((s) => ({ ...s, [key]: val })),
+    setOption: (key, val) =>
+      set((s) => {
+        if (key === 'useBalance' && !s.balanceEnabled) {
+          return { ...s, useBalance: false };
+        }
+        return { ...s, [key]: val };
+      }),
     setCustomItemName: (name) => set({ customItemName: name }),
     setCustomItemPrice: (price) => set({ customItemPrice: price }),
 
@@ -767,7 +857,7 @@ export const useStore = create<AppState>((set, get) => {
         date: state.date,
         employeeName: state.selectedEmployee.trim(),
         restaurantId: state.selectedRestaurant,
-        useBalance: state.useBalance,
+        useBalance: state.balanceEnabled && state.useBalance,
         items: [
           {
             itemId: String(item.id),
@@ -794,6 +884,13 @@ export const useStore = create<AppState>((set, get) => {
           subCategory: item.subCategory || '',
         });
 
+        if (isDrink && state.sweetness && state.ice) {
+          saveDrinkPref(state.selectedEmployee, {
+            sweetness: state.sweetness,
+            ice: state.ice,
+          });
+        }
+
         // 保留 selectedRestaurant 以支援同店連續加點
         set({
           selectedItem: null,
@@ -809,7 +906,10 @@ export const useStore = create<AppState>((set, get) => {
           loading: false,
           ...(res.newBalance !== null ? { balance: res.newBalance } : {}),
         });
-        return { ok: true };
+        return {
+          ok: true,
+          balanceInsufficient: res.balanceInsufficient,
+        };
       } catch (e: any) {
         set({ loading: false });
         return { ok: false, error: e.message };
@@ -1184,6 +1284,8 @@ export const useStore = create<AppState>((set, get) => {
           },
           allRestaurants: raw.allRestaurants,
           newItemDisplayDays: raw.newItemDisplayDays,
+          balanceEnabled: raw.balanceEnabled,
+          ...(!raw.balanceEnabled ? { useBalance: false } : {}),
           adminLoading: false,
         });
       } catch (e) {
@@ -1351,6 +1453,20 @@ export const useStore = create<AppState>((set, get) => {
       }
     },
 
+    adminUpdateBalanceEnabled: async (enabled) => {
+      try {
+        await updateBalanceEnabledApi(enabled);
+        await applyRebuiltCatalog();
+        set({
+          balanceEnabled: enabled,
+          ...(!enabled ? { useBalance: false } : {}),
+        });
+        return { ok: true };
+      } catch (e: any) {
+        return { ok: false, error: e.message };
+      }
+    },
+
     adminAddExtra: async (data, opts) => {
       if (!opts?.skipSync) set({ adminLoading: true });
       try {
@@ -1427,7 +1543,11 @@ export const useStore = create<AppState>((set, get) => {
         const res = await cleanupDuplicateMenuItemsApi(restaurantId);
         await applyRebuiltCatalog();
         set({ adminLoading: false });
-        return { ok: true, deletedCount: res.deletedCount };
+        return {
+          ok: true,
+          deletedCount: res.deletedCount,
+          deletedPortionsCount: res.deletedPortionsCount,
+        };
       } catch (e: any) {
         set({ adminLoading: false });
         return { ok: false, error: e.message };

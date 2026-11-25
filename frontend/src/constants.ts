@@ -19,3 +19,5 @@ export const LS_QUICK_ORDER_KEY = 'lunch-order-quick';
 export const LS_MENU_CACHE_KEY = 'lunch-order-menu-cache-v2';
 export const LS_EMP_CACHE_KEY = 'lunch-order-emp-cache-v2';
 export const LS_LAST_EMPLOYEE_KEY = 'lunch-order-last-emp';
+export const LS_DRINK_PREF_KEY = 'lunch-order-drink-pref-v1';
+export const LS_PICKUP_PREFIX = 'lunch-order-pickup-';

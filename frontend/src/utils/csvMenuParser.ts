@@ -1,5 +1,11 @@
 import type { MenuItem, ParsedMenuItem, Portion, FieldDiff } from '../types';
-import { parseMenuText } from './menuParser';
+import { parseMenuText } from './menuParser.ts';
+import {
+  normalizeName,
+  getBaseItemName,
+  dedupePortions,
+  formatPortionsSummary,
+} from './normalize.ts';
 
 interface CsvItemRow {
   restaurantId: string;
@@ -15,26 +21,6 @@ interface CsvPortionRow {
   itemId: string;
   portionName: string;
   price: number;
-}
-
-function normalizeName(name: string): string {
-  return name
-    .replace(/\s+/g, '')
-    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) =>
-      String.fromCharCode(s.charCodeAt(0) - 65248),
-    )
-    .replace(/（/g, '(')
-    .replace(/）/g, ')')
-    .replace(/【/g, '[')
-    .replace(/】/g, ']')
-    .replace(/，/g, ',')
-    .replace(/：/g, ':')
-    .toLowerCase();
-}
-
-function getBaseItemName(name: string): string {
-  if (!name) return '';
-  return name.replace(/[（(].*?[）)]/g, '').trim();
 }
 
 function parseCsvLine(line: string): string[] {
@@ -78,13 +64,19 @@ export function parseCsvMenuText(
 
   // Fallback to traditional text parser if not CSV format
   if (!isCsvFormat) {
-    return parseMenuText(text, existingItems, selectedRestaurantId || '__NONE__', defaultCategory);
+    return parseMenuText(
+      text,
+      existingItems,
+      selectedRestaurantId || '__NONE__',
+      defaultCategory,
+    );
   }
 
   const csvItemRows: CsvItemRow[] = [];
   const csvPortionRows: CsvPortionRow[] = [];
 
   let currentMode: 'item' | 'portion' | 'unknown' = 'unknown';
+  let hasPortionSection = false;
 
   for (const line of lines) {
     const cols = parseCsvLine(line);
@@ -96,6 +88,7 @@ export function parseCsvMenuText(
     }
     if (headerStr.includes('portionname')) {
       currentMode = 'portion';
+      hasPortionSection = true;
       continue;
     }
 
@@ -112,7 +105,7 @@ export function parseCsvMenuText(
           subCategory: subCat || '',
           itemName: name,
           flavors: flav || '',
-          price: price,
+          price,
         });
       } else if (cols.length >= 4 && !isNaN(parseFloat(cols[cols.length - 1]))) {
         // Fallback row mapping if columns differ slightly
@@ -135,32 +128,34 @@ export function parseCsvMenuText(
           restaurantId: rId,
           itemId: iId || '',
           portionName: pName,
-          price: price,
+          price,
         });
       }
     }
   }
 
-  const hasSelectedRest =
-    Boolean(selectedRestaurantId &&
-    selectedRestaurantId !== '__ALL__' &&
-    selectedRestaurantId !== '__NONE__');
+  const hasSelectedRest = Boolean(
+    selectedRestaurantId &&
+      selectedRestaurantId !== '__ALL__' &&
+      selectedRestaurantId !== '__NONE__',
+  );
 
-  // Group portions by itemId (優先直接以 itemId 關聯，徹底免去手動維護超長隨機 RestaurantID)
-  const portionsByItemKey = new Map<string, Portion[]>();
+  // 分組份量：優先以原始 CSV 的 `${restaurantId}_${itemId}` 精準關聯，避免多店同 ItemID 碰撞，
+  // 並保留單店純 `itemId` fallback，同時針對同品項重複份量列自動去重。
+  const portionsByFullKey = new Map<string, Portion[]>();
+  const portionsByItemIdOnly = new Map<string, Portion[]>();
   for (const p of csvPortionRows) {
-    const itemOnlyKey = p.itemId;
+    const entry = { name: p.portionName, price: p.price };
     const fullKey = `${p.restaurantId}_${p.itemId}`;
-    
-    if (!portionsByItemKey.has(itemOnlyKey)) {
-      portionsByItemKey.set(itemOnlyKey, []);
-    }
-    portionsByItemKey.get(itemOnlyKey)!.push({ name: p.portionName, price: p.price });
+    const fullList = portionsByFullKey.get(fullKey) || [];
+    fullList.push(entry);
+    portionsByFullKey.set(fullKey, fullList);
 
-    if (!portionsByItemKey.has(fullKey)) {
-      portionsByItemKey.set(fullKey, []);
+    if (p.itemId) {
+      const itemList = portionsByItemIdOnly.get(p.itemId) || [];
+      itemList.push(entry);
+      portionsByItemIdOnly.set(p.itemId, itemList);
     }
-    portionsByItemKey.get(fullKey)!.push({ name: p.portionName, price: p.price });
   }
 
   // Create lookup map: 核心改造 - 名稱優先 (normalizedName) 及 基礎品名 (baseName 去除括號)
@@ -170,10 +165,16 @@ export function parseCsvMenuText(
 
   for (const item of existingItems) {
     existingByKey.set(`${item.restaurantId}_${item.id}`, item);
-    existingByNameKey.set(`${item.restaurantId}_${normalizeName(item.name)}`, item);
+    existingByNameKey.set(
+      `${item.restaurantId}_${normalizeName(item.name)}`,
+      item,
+    );
     const base = getBaseItemName(item.name);
     if (base) {
-      existingByBaseNameKey.set(`${item.restaurantId}_${normalizeName(base)}`, item);
+      existingByBaseNameKey.set(
+        `${item.restaurantId}_${normalizeName(base)}`,
+        item,
+      );
     }
   }
 
@@ -181,9 +182,12 @@ export function parseCsvMenuText(
 
   for (const row of csvItemRows) {
     // 智慧綁定目標餐廳：若外部已選定目標餐廳，一律以選定餐廳 ID 為準
-    const targetRestId = hasSelectedRest ? (selectedRestaurantId as string) : row.restaurantId;
+    const targetRestId = hasSelectedRest
+      ? (selectedRestaurantId as string)
+      : row.restaurantId;
 
     const key = `${targetRestId}_${row.itemId}`;
+    const rawCsvFullKey = `${row.restaurantId}_${row.itemId}`;
     const nameKey = `${targetRestId}_${normalizeName(row.itemName)}`;
     const baseName = getBaseItemName(row.itemName);
     const baseKey = `${targetRestId}_${normalizeName(baseName)}`;
@@ -197,12 +201,20 @@ export function parseCsvMenuText(
       existingByBaseNameKey.get(baseKey) ||
       existingByKey.get(key);
 
-    // 優先以純 itemId 取得關聯份量，fallback 至 fullKey
-    const portions = portionsByItemKey.get(row.itemId) || portionsByItemKey.get(key) || [];
+    // 優先以 CSV 原始 `${row.restaurantId}_${row.itemId}` 取得份量，fallback 至純 itemId，並執行去重
+    const rawMatchedPortions =
+      portionsByFullKey.get(rawCsvFullKey) ||
+      (hasSelectedRest && row.itemId
+        ? portionsByItemIdOnly.get(row.itemId)
+        : undefined) ||
+      [];
+    const csvPortions = dedupePortions(rawMatchedPortions);
 
     const isSubDrink = /^(飲料|飲品)$/.test((row.subCategory || '').trim());
     const resolvedCategory =
-      defaultCategory === '飲料' || isSubDrink ? '飲料' : defaultCategory || '正餐';
+      defaultCategory === '飲料' || isSubDrink
+        ? '飲料'
+        : defaultCategory || '正餐';
 
     if (!existing) {
       // ADD (真正的新增品項)
@@ -214,7 +226,7 @@ export function parseCsvMenuText(
         category: resolvedCategory,
         subCategory: row.subCategory,
         flavors: row.flavors,
-        portions: portions,
+        portions: csvPortions,
         changeType: 'add',
       });
     } else {
@@ -272,22 +284,24 @@ export function parseCsvMenuText(
         });
       }
 
-      // Check portions diff
-      const existingPortionsStr = (existing.portions || [])
-        .map((p) => `${p.name}:$${p.price}`)
-        .sort()
-        .join(', ');
-      const newPortionsStr = portions
-        .map((p) => `${p.name}:$${p.price}`)
-        .sort()
-        .join(', ');
+      // 份量差異判定：
+      // - 含 PortionName 表（雙表格 CSV）：直接以 csvPortions 為準（含清除舊份量與順序調整）
+      // - 不含 PortionName 表（單表格 CSV）：保留既有去重後份量，不誤刪既有份量
+      // - 若現有資料本身存在重複份量（raw !== deduped），亦視為異動供一鍵修正
+      const existingRawStr = formatPortionsSummary(existing.portions, {
+        dedupe: false,
+      });
+      const nextPortions = hasPortionSection
+        ? csvPortions
+        : dedupePortions(existing.portions);
+      const nextPortionsStr = formatPortionsSummary(nextPortions);
 
-      if (portions.length > 0 && existingPortionsStr !== newPortionsStr) {
+      if (existingRawStr !== nextPortionsStr) {
         diffs.push({
           field: 'portions',
           label: '份量規格',
-          oldVal: existingPortionsStr || '(無份量)',
-          newVal: newPortionsStr,
+          oldVal: existingRawStr || '(無份量)',
+          newVal: nextPortionsStr || '(無份量 / 單一價)',
         });
       }
 
@@ -300,7 +314,7 @@ export function parseCsvMenuText(
         category: resolvedCategory,
         subCategory: row.subCategory || existing.subCategory,
         flavors: row.flavors || existing.flavors,
-        portions: portions.length > 0 ? portions : existing.portions || [],
+        portions: nextPortions,
         changeType: diffs.length > 0 ? 'update' : 'unchanged',
         oldPrice: existing.price,
         oldSubCategory: existing.subCategory,

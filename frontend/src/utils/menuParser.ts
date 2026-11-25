@@ -1,4 +1,10 @@
-import type { MenuItem, ParsedMenuItem, Portion } from '../types';
+import type { FieldDiff, MenuItem, ParsedMenuItem, Portion } from '../types';
+import {
+  normalizeName,
+  getBaseItemName,
+  dedupePortions,
+  formatPortionsSummary,
+} from './normalize.ts';
 
 // 價格模式
 const PRICE_PATTERNS = [
@@ -10,8 +16,11 @@ const PRICE_PATTERNS = [
 // 特價模式
 const SALE_PATTERN = /原價.*?[$＄]?(\d+).*?[→➜>＞].*?[$＄]?(\d+)/;
 
-// 份量模式
-const PORTION_PATTERN = /(大杯|中杯|小杯|大|中|小|L|M|S)\s*[$＄]?\s*(\d+)/gi;
+// 份量模式（涵蓋飲品與正餐常見單位）
+const PORTION_UNIT =
+  '特大杯|大杯|中杯|小杯|大碗|小碗|大份|小份|杯|瓶|壺|碗|盤|份|罐|盒|大|中|小|XL|L|M|S';
+const PORTION_PATTERN = new RegExp(`(${PORTION_UNIT})\\s*[$＄]?\\s*(\\d+)`, 'gi');
+const PORTION_HEAD_PATTERN = new RegExp(`^(.+?)\\s*(?:${PORTION_UNIT})\\s*[$＄]?\\s*\\d+`, 'i');
 
 // 語意標記
 const SECTION_MARKERS: Record<string, RegExp> = {
@@ -30,19 +39,19 @@ function detectSection(line: string): 'add' | 'remove' | 'sale' | null {
 function extractPrice(line: string): number | null {
   for (const pattern of PRICE_PATTERNS) {
     const match = line.match(pattern);
-    if (match) return parseInt(match[1]);
+    if (match) return parseInt(match[1], 10);
   }
   return null;
 }
 
 function extractPortions(line: string): Portion[] {
   const portions: Portion[] = [];
-  let match;
+  let match: RegExpExecArray | null;
   const regex = new RegExp(PORTION_PATTERN.source, 'gi');
   while ((match = regex.exec(line)) !== null) {
-    portions.push({ name: match[1], price: parseInt(match[2]) });
+    portions.push({ name: match[1], price: parseInt(match[2], 10) });
   }
-  return portions;
+  return dedupePortions(portions);
 }
 
 function extractSalePrice(
@@ -50,29 +59,12 @@ function extractSalePrice(
 ): { originalPrice: number; salePrice: number } | null {
   const match = line.match(SALE_PATTERN);
   if (match) {
-    return { originalPrice: parseInt(match[1]), salePrice: parseInt(match[2]) };
+    return {
+      originalPrice: parseInt(match[1], 10),
+      salePrice: parseInt(match[2], 10),
+    };
   }
   return null;
-}
-
-function normalizeName(name: string): string {
-  return name
-    .replace(/\s+/g, '')
-    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) =>
-      String.fromCharCode(s.charCodeAt(0) - 65248),
-    )
-    .replace(/（/g, '(')
-    .replace(/）/g, ')')
-    .replace(/【/g, '[')
-    .replace(/】/g, ']')
-    .replace(/，/g, ',')
-    .replace(/：/g, ':')
-    .toLowerCase();
-}
-
-function getBaseItemName(name: string): string {
-  if (!name) return '';
-  return name.replace(/[（(].*?[）)]/g, '').trim();
 }
 
 export function parseMenuText(
@@ -112,10 +104,11 @@ export function parseMenuText(
       currentSection = section;
     }
 
-    // Check for category headers (short lines without prices)
+    // Check for category headers (short lines without prices or portions)
     if (
       line.length < 15 &&
       !extractPrice(line) &&
+      extractPortions(line).length === 0 &&
       /[\u4e00-\u9fff]{2,}/.test(line)
     ) {
       const sec = detectSection(line);
@@ -152,30 +145,67 @@ export function parseMenuText(
     // Check for portions
     const portions = extractPortions(line);
     if (portions.length > 1) {
-      const nameMatch = line.match(
-        /^(.+?)\s*(?:大杯|中杯|小杯|大|中|小|L|M|S)/i,
-      );
+      const nameMatch = line.match(PORTION_HEAD_PATTERN);
       if (nameMatch) {
-        const name = nameMatch[1].trim();
-        const existing =
-          existingMap.get(normalizeName(name)) ||
-          existingBaseMap.get(normalizeName(getBaseItemName(name)));
-        results.push({
-          itemId: existing?.id,
-          matchedItemId: existing?.id,
-          name,
-          price: portions[0].price,
-          category: resolveItemCategory(currentSubCategory),
-          subCategory: currentSubCategory,
-          portions,
-          changeType:
-            currentSection === 'remove'
-              ? 'remove'
-              : existing
-                ? 'update'
-                : 'add',
-        });
-        continue;
+        const name = nameMatch[1].replace(/[\s\-_:：]+$/, '').trim();
+        if (name) {
+          const existing =
+            existingMap.get(normalizeName(name)) ||
+            existingBaseMap.get(normalizeName(getBaseItemName(name)));
+          const basePrice = Math.min(...portions.map((p) => p.price));
+          const diffs: FieldDiff[] = [];
+
+          if (existing) {
+            if (existing.price !== basePrice) {
+              diffs.push({
+                field: 'price',
+                label: '基礎價格',
+                oldVal: `$${existing.price}`,
+                newVal: `$${basePrice}`,
+              });
+            }
+            if (existing.name.trim() !== name.trim()) {
+              diffs.push({
+                field: 'name',
+                label: '品項名稱',
+                oldVal: existing.name,
+                newVal: name,
+              });
+            }
+            const existingRawPortionsStr = formatPortionsSummary(existing.portions, { dedupe: false });
+            const newPortionsStr = formatPortionsSummary(portions);
+            if (existingRawPortionsStr !== newPortionsStr) {
+              diffs.push({
+                field: 'portions',
+                label: '份量規格',
+                oldVal: existingRawPortionsStr || '(無份量)',
+                newVal: newPortionsStr,
+              });
+            }
+          }
+
+          results.push({
+            itemId: existing?.id,
+            matchedItemId: existing?.id,
+            name,
+            price: basePrice,
+            category: resolveItemCategory(currentSubCategory),
+            subCategory: currentSubCategory || existing?.subCategory || '',
+            portions,
+            changeType:
+              currentSection === 'remove'
+                ? 'remove'
+                : existing
+                  ? diffs.length > 0
+                    ? 'update'
+                    : 'unchanged'
+                  : 'add',
+            oldPrice: existing?.price,
+            oldPortions: existing?.portions,
+            fieldDiffs: diffs,
+          });
+          continue;
+        }
       }
     }
 
@@ -197,16 +227,30 @@ export function parseMenuText(
         existingMap.get(normalizeName(name)) ||
         existingBaseMap.get(normalizeName(getBaseItemName(name)));
 
+      const diffs: FieldDiff[] = [];
       let changeType: ParsedMenuItem['changeType'] = 'add';
       if (currentSection === 'remove') {
         changeType = 'remove';
       } else if (currentSection === 'sale') {
         changeType = 'sale';
       } else if (existing) {
-        changeType =
-          existing.price !== price || existing.name.trim() !== name.trim()
-            ? 'update'
-            : 'unchanged';
+        if (existing.price !== price) {
+          diffs.push({
+            field: 'price',
+            label: '基礎價格',
+            oldVal: `$${existing.price}`,
+            newVal: `$${price}`,
+          });
+        }
+        if (existing.name.trim() !== name.trim()) {
+          diffs.push({
+            field: 'name',
+            label: '品項名稱',
+            oldVal: existing.name,
+            newVal: name,
+          });
+        }
+        changeType = diffs.length > 0 ? 'update' : 'unchanged';
       }
 
       results.push({
@@ -215,11 +259,12 @@ export function parseMenuText(
         name,
         price,
         category: resolveItemCategory(currentSubCategory),
-        subCategory: currentSubCategory,
-        portions: [],
+        subCategory: currentSubCategory || existing?.subCategory || '',
+        portions: existing ? dedupePortions(existing.portions) : [],
         changeType,
         oldPrice: existing?.price,
         saleLabel: currentSection === 'sale' ? '特價' : undefined,
+        fieldDiffs: diffs,
       });
     } else if (currentSection === 'remove') {
       // For remove section, items might not have prices

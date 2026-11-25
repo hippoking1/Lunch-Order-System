@@ -15,7 +15,15 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { LS_MENU_CACHE_KEY, LS_EMP_CACHE_KEY } from '../constants';
-import { normalizeName, getBaseItemName } from '../utils/normalize';
+import {
+  normalizeName,
+  getBaseItemName,
+  dedupePortions,
+  safeDocKey,
+  planPortionSync,
+  planDuplicatePortionsCleanup,
+  type StoredPortionRecord,
+} from '../utils/normalize';
 import type {
   Confirmation,
   Extra,
@@ -47,6 +55,7 @@ export function getTodayDateString(): string {
 interface CompactBundle {
   version: number;
   newItemDisplayDays: number;
+  balanceEnabled?: boolean;
   allRestaurants: Restaurant[];
   items: Array<Record<string, any>>;
   extras: Extra[];
@@ -85,7 +94,7 @@ function fromCompactItems(compact: Array<Record<string, any>>): MenuItem[] {
     image: c.img || '',
     subCategory: c.sc || '',
     flavors: c.fl || '',
-    portions: Array.isArray(c.po) ? c.po : [],
+    portions: dedupePortions(Array.isArray(c.po) ? c.po : []),
     limitedType: c.lt || '',
     startDate: c.sd || '',
     endDate: c.ed || '',
@@ -113,6 +122,7 @@ export function filterActiveMenuForDate(
     extras: Extra[];
     specialPrices: SpecialPrice[];
     newItemDisplayDays: number;
+    balanceEnabled?: boolean;
   },
   dateStr: string,
 ): {
@@ -120,6 +130,7 @@ export function filterActiveMenuForDate(
   allRestaurants: Restaurant[];
   telephones: Record<string, RestaurantTelephone>;
   newItemDisplayDays: number;
+  balanceEnabled: boolean;
 } {
   const restaurants = rawBundle.allRestaurants.filter(
     (r) => r.isActive !== false,
@@ -149,7 +160,11 @@ export function filterActiveMenuForDate(
       ) {
         itemCat = restCat;
       }
-      return { ...item, category: itemCat };
+      return {
+        ...item,
+        category: itemCat,
+        portions: dedupePortions(item.portions),
+      };
     });
 
   const specialPrices = (rawBundle.specialPrices || []).filter((sp) => {
@@ -159,16 +174,20 @@ export function filterActiveMenuForDate(
     return true;
   });
 
+  const balanceEnabled = Boolean(rawBundle.balanceEnabled);
+
   return {
     allRestaurants: rawBundle.allRestaurants,
     telephones: hydrateTelephones(rawBundle.allRestaurants),
     newItemDisplayDays: rawBundle.newItemDisplayDays ?? 7,
+    balanceEnabled,
     menuPayload: {
       restaurants,
       items,
       extras: rawBundle.extras || [],
       specialPrices,
       newItemDisplayDays: rawBundle.newItemDisplayDays ?? 7,
+      balanceEnabled,
     },
   };
 }
@@ -178,6 +197,7 @@ export function filterActiveMenuForDate(
 interface CachedMenuStorage {
   version: number;
   newItemDisplayDays: number;
+  balanceEnabled?: boolean;
   allRestaurants: Restaurant[];
   items: MenuItem[];
   extras: Extra[];
@@ -215,16 +235,19 @@ export async function readFullMenuFromCollections(): Promise<{
   extras: Extra[];
   specialPrices: SpecialPrice[];
   newItemDisplayDays: number;
+  balanceEnabled: boolean;
 }> {
-  const [restSnap, portionSnap, menuSnap, spSnap, setSnap] = await Promise.all([
-    getDocs(collection(db, 'restaurants')),
-    getDocs(collection(db, 'itemPortions')),
-    getDocs(query(collection(db, 'menuItems'), where('isActive', '==', true))),
-    getDocs(
-      query(collection(db, 'specialPrices'), where('isActive', '==', true)),
-    ),
-    getDoc(doc(db, 'settings', 'NewItemDisplayDays')),
-  ]);
+  const [restSnap, portionSnap, menuSnap, spSnap, setSnap, balanceSnap] =
+    await Promise.all([
+      getDocs(collection(db, 'restaurants')),
+      getDocs(collection(db, 'itemPortions')),
+      getDocs(query(collection(db, 'menuItems'), where('isActive', '==', true))),
+      getDocs(
+        query(collection(db, 'specialPrices'), where('isActive', '==', true)),
+      ),
+      getDoc(doc(db, 'settings', 'NewItemDisplayDays')),
+      getDoc(doc(db, 'settings', 'BalanceEnabled')),
+    ]);
 
   const restCatMap: Record<string, string> = {};
   const allRestaurants: Restaurant[] = restSnap.docs.map((d) => {
@@ -243,15 +266,17 @@ export async function readFullMenuFromCollections(): Promise<{
     };
   });
 
-  const portionsById: Record<string, Portion[]> = {};
-  const portionsByNorm: Record<string, Portion[]> = {};
-  const portionsByLegacy: Record<string, Portion[]> = {};
+  type SortablePortion = Portion & { sortOrder: number };
+  const portionsById: Record<string, SortablePortion[]> = {};
+  const portionsByNorm: Record<string, SortablePortion[]> = {};
+  const portionsByLegacy: Record<string, SortablePortion[]> = {};
 
   portionSnap.docs.forEach((pDoc) => {
     const d = pDoc.data();
-    const pObj: Portion = {
+    const pObj: SortablePortion = {
       name: d.portionName || '',
       price: Number(d.price || 0),
+      sortOrder: typeof d.sortOrder === 'number' ? d.sortOrder : 9999,
     };
     if (!pObj.name) return;
     if (d.menuItemId) {
@@ -269,19 +294,26 @@ export async function readFullMenuFromCollections(): Promise<{
     }
   });
 
+  const sortAndDedupe = (list?: SortablePortion[]): Portion[] => {
+    if (!list || list.length === 0) return [];
+    return dedupePortions(
+      [...list].sort((a, b) => a.sortOrder - b.sortOrder),
+    );
+  };
+
   const items: MenuItem[] = [];
   const extras: Extra[] = [];
 
   menuSnap.docs.forEach((mDoc) => {
     const d = mDoc.data();
     const norm = d.normalizedName || normalizeName(d.itemName || '');
-    const matchedPortions =
+    const matchedPortions = sortAndDedupe(
       portionsById[`${d.restaurantId}_${mDoc.id}`] ||
-      portionsByNorm[`${d.restaurantId}_${norm}`] ||
-      (d.legacyItemId
-        ? portionsByLegacy[`${d.restaurantId}_${d.legacyItemId}`]
-        : undefined) ||
-      [];
+        portionsByNorm[`${d.restaurantId}_${norm}`] ||
+        (d.legacyItemId
+          ? portionsByLegacy[`${d.restaurantId}_${d.legacyItemId}`]
+          : undefined),
+    );
 
     if (!d.isExtra) {
       const restCat = restCatMap[d.restaurantId] || '正餐';
@@ -343,6 +375,9 @@ export async function readFullMenuFromCollections(): Promise<{
   const newItemDisplayDays = setSnap.exists()
     ? Number(setSnap.data()?.value) || 7
     : 7;
+  const balanceEnabled = balanceSnap.exists()
+    ? Boolean(balanceSnap.data()?.value)
+    : false;
 
   return {
     allRestaurants,
@@ -350,6 +385,7 @@ export async function readFullMenuFromCollections(): Promise<{
     extras,
     specialPrices,
     newItemDisplayDays,
+    balanceEnabled,
   };
 }
 
@@ -359,11 +395,13 @@ export async function publishMenuBundleFromRaw(raw: {
   extras: Extra[];
   specialPrices: SpecialPrice[];
   newItemDisplayDays: number;
+  balanceEnabled: boolean;
 }): Promise<number> {
   const version = Date.now();
   const bundle: CompactBundle = {
     version,
     newItemDisplayDays: raw.newItemDisplayDays ?? 7,
+    balanceEnabled: Boolean(raw.balanceEnabled),
     allRestaurants: raw.allRestaurants,
     items: toCompactItems(raw.items),
     extras: raw.extras,
@@ -408,6 +446,7 @@ export async function publishMenuBundleFromRaw(raw: {
     {
       menuVersion: version,
       newItemDisplayDays: raw.newItemDisplayDays ?? 7,
+      balanceEnabled: Boolean(raw.balanceEnabled),
       updatedAt: bundle.updatedAt,
     },
     { merge: true },
@@ -416,6 +455,7 @@ export async function publishMenuBundleFromRaw(raw: {
   writeLocalJson(LS_MENU_CACHE_KEY, {
     version,
     newItemDisplayDays: raw.newItemDisplayDays ?? 7,
+    balanceEnabled: Boolean(raw.balanceEnabled),
     allRestaurants: raw.allRestaurants,
     items: raw.items,
     extras: raw.extras,
@@ -433,6 +473,7 @@ export async function rebuildCatalogBundleFromFirestore(): Promise<{
     extras: Extra[];
     specialPrices: SpecialPrice[];
     newItemDisplayDays: number;
+    balanceEnabled: boolean;
   };
 }> {
   const raw = await readFullMenuFromCollections();
@@ -446,6 +487,7 @@ export async function loadCatalogWithCache(dateStr: string): Promise<{
   allRestaurants: Restaurant[];
   telephones: Record<string, RestaurantTelephone>;
   newItemDisplayDays: number;
+  balanceEnabled: boolean;
 }> {
   let configSnap: DocumentSnapshot | null = null;
   try {
@@ -457,6 +499,10 @@ export async function loadCatalogWithCache(dateStr: string): Promise<{
   const configData = configSnap?.exists() ? configSnap.data() : null;
   const remoteMenuVer = Number(configData?.menuVersion || 0);
   const remoteEmpVer = Number(configData?.employeesVersion || 0);
+  const remoteBalanceEnabled =
+    typeof configData?.balanceEnabled === 'boolean'
+      ? configData.balanceEnabled
+      : undefined;
 
   // 1. Menu Bundle (LocalStorage or 1-doc Catalog)
   let rawMenu: CachedMenuStorage | null = readLocalJson<CachedMenuStorage>(
@@ -487,6 +533,10 @@ export async function loadCatalogWithCache(dateStr: string): Promise<{
           rawMenu = {
             version: Number(parsed.version || remoteMenuVer || Date.now()),
             newItemDisplayDays: Number(parsed.newItemDisplayDays ?? 7),
+            balanceEnabled:
+              typeof parsed.balanceEnabled === 'boolean'
+                ? parsed.balanceEnabled
+                : (remoteBalanceEnabled ?? false),
             allRestaurants: parsed.allRestaurants || [],
             items: fromCompactItems(parsed.items || []),
             extras: parsed.extras || [],
@@ -509,6 +559,12 @@ export async function loadCatalogWithCache(dateStr: string): Promise<{
       };
       writeLocalJson(LS_MENU_CACHE_KEY, rawMenu);
     }
+  } else if (
+    remoteBalanceEnabled !== undefined &&
+    rawMenu.balanceEnabled !== remoteBalanceEnabled
+  ) {
+    rawMenu = { ...rawMenu, balanceEnabled: remoteBalanceEnabled };
+    writeLocalJson(LS_MENU_CACHE_KEY, rawMenu);
   }
 
   // 2. Employees List (LocalStorage or 1-doc Catalog)
@@ -822,6 +878,7 @@ export async function submitOrderApi(
   return {
     success: true,
     isPaidByBalance: result.isPaidByBalance,
+    balanceInsufficient: useBalance && totalPrice > 0 && !result.isPaidByBalance,
     newBalance: result.newBalance,
     newOrder: mapOrderDoc({
       id: orderRef.id,
@@ -1028,10 +1085,6 @@ export async function getFrequentOrdersApi(
 }
 
 // ── Locks & Confirmations (Deterministic IDs + Legacy Cleanup) ──
-
-function safeDocKey(raw: string): string {
-  return encodeURIComponent(raw).replace(/%/g, '_');
-}
 
 export async function lockCategoryRestaurantApi(
   dateString: string,
@@ -1272,6 +1325,13 @@ export async function addOrUpdateMenuItemApi(
     endDate: data.endDate || '',
   };
 
+  const previousData = existingDoc?.data();
+  const previousItemName = String(previousData?.itemName || '');
+  const previousNormalizedName = String(
+    previousData?.normalizedName || normalizeName(previousItemName),
+  );
+  const legacyItemId = String(previousData?.legacyItemId || data.itemId || '');
+
   if (existingDoc) {
     docId = existingDoc.id;
     await updateDoc(existingDoc.ref, payload);
@@ -1288,23 +1348,80 @@ export async function addOrUpdateMenuItemApi(
       query(
         collection(db, 'itemPortions'),
         where('restaurantId', '==', restaurantId),
-        where('normalizedName', '==', normalized),
+      ),
+    );
+    const existingPortionDocs: StoredPortionRecord[] = pSnap.docs.map((d) => {
+      const dat = d.data();
+      return {
+        id: d.id,
+        restaurantId: String(dat.restaurantId || ''),
+        menuItemId: dat.menuItemId ? String(dat.menuItemId) : undefined,
+        menuItemName: dat.menuItemName ? String(dat.menuItemName) : undefined,
+        normalizedName: dat.normalizedName
+          ? String(dat.normalizedName)
+          : undefined,
+        legacyItemId: dat.legacyItemId ? String(dat.legacyItemId) : undefined,
+        portionName: dat.portionName ? String(dat.portionName) : undefined,
+        price: Number(dat.price || 0),
+      };
+    });
+
+    const syncPlan = planPortionSync({
+      restaurantId,
+      menuItemId: docId,
+      itemName,
+      previousItemName,
+      previousNormalizedName,
+      legacyItemId,
+      nextPortions: data.portions,
+      existingPortionDocs,
+    });
+
+    const batch = writeBatch(db);
+    syncPlan.toDeleteIds.forEach((delId) =>
+      batch.delete(doc(db, 'itemPortions', delId)),
+    );
+    syncPlan.toUpsert.forEach((u) => {
+      batch.set(doc(db, 'itemPortions', u.docId), {
+        restaurantId: u.restaurantId,
+        menuItemId: u.menuItemId,
+        menuItemName: u.menuItemName,
+        normalizedName: u.normalizedName,
+        portionName: u.portionName,
+        price: u.price,
+        sortOrder: u.sortOrder,
+      });
+    });
+    if (syncPlan.toDeleteIds.length > 0 || syncPlan.toUpsert.length > 0) {
+      await batch.commit();
+    }
+  } else if (existingDoc && previousNormalizedName && previousNormalizedName !== normalized) {
+    // 若僅改品名而未傳入 portions，同步更新既有份量文件的 menuItemName / normalizedName 以免脫鉤
+    const pSnap = await getDocs(
+      query(
+        collection(db, 'itemPortions'),
+        where('restaurantId', '==', restaurantId),
       ),
     );
     const batch = writeBatch(db);
-    pSnap.docs.forEach((d) => batch.delete(d.ref));
-    for (const p of data.portions) {
-      const pRef = doc(collection(db, 'itemPortions'));
-      batch.set(pRef, {
-        restaurantId,
-        menuItemId: docId,
-        menuItemName: itemName,
-        normalizedName: normalized,
-        portionName: p.name,
-        price: Number(p.price || 0),
-      });
-    }
-    await batch.commit();
+    let updatedCount = 0;
+    pSnap.docs.forEach((pDoc) => {
+      const dat = pDoc.data();
+      const docNorm = dat.normalizedName || normalizeName(dat.menuItemName || '');
+      if (
+        dat.menuItemId === docId ||
+        docNorm === previousNormalizedName ||
+        (legacyItemId && String(dat.legacyItemId || '') === legacyItemId)
+      ) {
+        batch.update(pDoc.ref, {
+          menuItemId: docId,
+          menuItemName: itemName,
+          normalizedName: normalized,
+        });
+        updatedCount++;
+      }
+    });
+    if (updatedCount > 0) await batch.commit();
   }
 
   return docId;
@@ -1354,13 +1471,22 @@ export async function applyMenuChangesApi(
     return cat;
   };
 
-  // 先一次性載入該餐廳的現有品項做記憶體比對，避免每筆變更都重複查詢 Firestore
-  const restItemsSnap = await getDocs(
-    query(
-      collection(db, 'menuItems'),
-      where('restaurantId', '==', restaurantId),
+  // 先一次性載入該餐廳的現有品項與份量做記憶體比對，避免每筆變更都重複查詢 Firestore
+  const [restItemsSnap, restPortionsSnap] = await Promise.all([
+    getDocs(
+      query(
+        collection(db, 'menuItems'),
+        where('restaurantId', '==', restaurantId),
+      ),
     ),
-  );
+    getDocs(
+      query(
+        collection(db, 'itemPortions'),
+        where('restaurantId', '==', restaurantId),
+      ),
+    ),
+  ]);
+
   const byIdMap = new Map<string, DocumentSnapshot>();
   const byNormMap = new Map<string, DocumentSnapshot>();
   const byBaseMap = new Map<string, DocumentSnapshot>();
@@ -1375,6 +1501,38 @@ export async function applyMenuChangesApi(
       byBaseMap.set(base, d);
     }
   });
+
+  const toStoredPortion = (d: DocumentSnapshot): StoredPortionRecord => {
+    const dat = d.data() || {};
+    return {
+      id: d.id,
+      restaurantId: String(dat.restaurantId || ''),
+      menuItemId: dat.menuItemId ? String(dat.menuItemId) : undefined,
+      menuItemName: dat.menuItemName ? String(dat.menuItemName) : undefined,
+      normalizedName: dat.normalizedName ? String(dat.normalizedName) : undefined,
+      legacyItemId: dat.legacyItemId ? String(dat.legacyItemId) : undefined,
+      portionName: dat.portionName ? String(dat.portionName) : undefined,
+      price: Number(dat.price || 0),
+    };
+  };
+
+  const portionDocsByRest = new Map<string, StoredPortionRecord[]>();
+  portionDocsByRest.set(
+    restaurantId,
+    restPortionsSnap.docs.map(toStoredPortion),
+  );
+
+  const getPortionDocsForRest = async (
+    rid: string,
+  ): Promise<StoredPortionRecord[]> => {
+    if (portionDocsByRest.has(rid)) return portionDocsByRest.get(rid)!;
+    const snap = await getDocs(
+      query(collection(db, 'itemPortions'), where('restaurantId', '==', rid)),
+    );
+    const list = snap.docs.map(toStoredPortion);
+    portionDocsByRest.set(rid, list);
+    return list;
+  };
 
   let applied = 0;
   let batch = writeBatch(db);
@@ -1391,6 +1549,58 @@ export async function applyMenuChangesApi(
   const commitIfNeeded = async () => {
     ops++;
     if (ops >= 400) await flushBatch();
+  };
+
+  const queuePortionsSync = async (syncParams: {
+    restaurantId: string;
+    menuItemId: string;
+    itemName: string;
+    previousItemName?: string;
+    previousNormalizedName?: string;
+    legacyItemId?: string;
+    nextPortions: Array<{ name: string; price: number }>;
+  }) => {
+    const existingList = await getPortionDocsForRest(syncParams.restaurantId);
+    const plan = planPortionSync({
+      ...syncParams,
+      existingPortionDocs: existingList,
+    });
+
+    for (const delId of plan.toDeleteIds) {
+      batch.delete(doc(db, 'itemPortions', delId));
+      await commitIfNeeded();
+    }
+    for (const u of plan.toUpsert) {
+      batch.set(doc(db, 'itemPortions', u.docId), {
+        restaurantId: u.restaurantId,
+        menuItemId: u.menuItemId,
+        menuItemName: u.menuItemName,
+        normalizedName: u.normalizedName,
+        portionName: u.portionName,
+        price: u.price,
+        sortOrder: u.sortOrder,
+      });
+      await commitIfNeeded();
+    }
+
+    // 同步更新記憶體清單，防止同一批次內後續項目重複處理已刪/已寫文件
+    const deletedSet = new Set(plan.toDeleteIds);
+    const upsertedIds = new Set(plan.toUpsert.map((u) => u.docId));
+    const nextList = existingList.filter(
+      (p) => !deletedSet.has(p.id) && !upsertedIds.has(p.id),
+    );
+    plan.toUpsert.forEach((u) => {
+      nextList.push({
+        id: u.docId,
+        restaurantId: u.restaurantId,
+        menuItemId: u.menuItemId,
+        menuItemName: u.menuItemName,
+        normalizedName: u.normalizedName,
+        portionName: u.portionName,
+        price: u.price,
+      });
+    });
+    portionDocsByRest.set(syncParams.restaurantId, nextList);
   };
 
   for (const change of changes) {
@@ -1433,6 +1643,7 @@ export async function applyMenuChangesApi(
       }
     } else if (change.type === 'update') {
       if (targetDoc) {
+        const prev = targetDoc.data() || {};
         const updatePayload: Record<string, any> = {
           itemName,
           normalizedName: normalizeName(itemName),
@@ -1448,43 +1659,119 @@ export async function applyMenuChangesApi(
           updatePayload.limitedType = change.limitedType;
         batch.update(targetDoc.ref, updatePayload);
         await commitIfNeeded();
+
+        if (Array.isArray(change.portions)) {
+          await queuePortionsSync({
+            restaurantId: targetRestId,
+            menuItemId: targetDoc.id,
+            itemName,
+            previousItemName: String(prev.itemName || ''),
+            previousNormalizedName: String(
+              prev.normalizedName || normalizeName(prev.itemName || ''),
+            ),
+            legacyItemId: prev.legacyItemId
+              ? String(prev.legacyItemId)
+              : undefined,
+            nextPortions: change.portions,
+          });
+        }
         applied++;
       } else {
-        await addOrUpdateMenuItemApi({
+        const newRef = doc(collection(db, 'menuItems'));
+        const norm = normalizeName(itemName);
+        batch.set(newRef, {
           restaurantId: targetRestId,
           itemName,
-          price: change.price,
+          normalizedName: norm,
+          price: Number(change.price || 0),
           category: resolvedCategory,
           subCategory: change.subCategory || '',
+          image: '',
           flavors: change.flavors || '',
+          isExtra: false,
+          extraGroup: '',
+          extraType: 'extra',
+          isActive: true,
           limitedType: change.limitedType || '',
-          portions: change.portions || [],
+          startDate: '',
+          endDate: '',
+          createdAt: new Date().toISOString(),
+          legacyItemId: change.itemId || '',
         });
+        await commitIfNeeded();
+        if (Array.isArray(change.portions) && change.portions.length > 0) {
+          await queuePortionsSync({
+            restaurantId: targetRestId,
+            menuItemId: newRef.id,
+            itemName,
+            nextPortions: change.portions,
+          });
+        }
         applied++;
       }
     } else if (change.type === 'add') {
       if (targetDoc) {
+        const prev = targetDoc.data() || {};
         batch.update(targetDoc.ref, {
           itemName,
           normalizedName: normalizeName(itemName),
           price: Number(change.price || 0),
           category: resolvedCategory,
           subCategory:
-            change.subCategory || targetDoc.data()?.subCategory || '',
+            change.subCategory || prev.subCategory || '',
+          ...(change.flavors !== undefined ? { flavors: change.flavors } : {}),
+          ...(change.limitedType !== undefined
+            ? { limitedType: change.limitedType }
+            : {}),
           isActive: true,
         });
         await commitIfNeeded();
+        if (Array.isArray(change.portions)) {
+          await queuePortionsSync({
+            restaurantId: targetRestId,
+            menuItemId: targetDoc.id,
+            itemName,
+            previousItemName: String(prev.itemName || ''),
+            previousNormalizedName: String(
+              prev.normalizedName || normalizeName(prev.itemName || ''),
+            ),
+            legacyItemId: prev.legacyItemId
+              ? String(prev.legacyItemId)
+              : undefined,
+            nextPortions: change.portions,
+          });
+        }
       } else {
-        await addOrUpdateMenuItemApi({
+        const newRef = doc(collection(db, 'menuItems'));
+        const norm = normalizeName(itemName);
+        batch.set(newRef, {
           restaurantId: targetRestId,
           itemName,
-          price: change.price,
+          normalizedName: norm,
+          price: Number(change.price || 0),
           category: resolvedCategory,
           subCategory: change.subCategory || '',
+          image: '',
           flavors: change.flavors || '',
+          isExtra: false,
+          extraGroup: '',
+          extraType: 'extra',
+          isActive: true,
           limitedType: change.limitedType || '',
-          portions: change.portions || [],
+          startDate: '',
+          endDate: '',
+          createdAt: new Date().toISOString(),
+          legacyItemId: change.itemId || '',
         });
+        await commitIfNeeded();
+        if (Array.isArray(change.portions) && change.portions.length > 0) {
+          await queuePortionsSync({
+            restaurantId: targetRestId,
+            menuItemId: newRef.id,
+            itemName,
+            nextPortions: change.portions,
+          });
+        }
       }
       applied++;
     }
@@ -1577,18 +1864,37 @@ export async function updateNewItemDisplayDaysApi(days: number): Promise<void> {
   await setDoc(doc(db, 'settings', 'NewItemDisplayDays'), { value: days });
 }
 
+export async function updateBalanceEnabledApi(enabled: boolean): Promise<void> {
+  await setDoc(doc(db, 'settings', 'BalanceEnabled'), {
+    value: Boolean(enabled),
+  });
+}
+
 export async function cleanupDuplicateMenuItemsApi(
   restaurantId?: string,
-): Promise<{ duplicateGroups: number; deletedCount: number }> {
-  const q =
-    restaurantId && restaurantId !== '__ALL__'
-      ? query(
-          collection(db, 'menuItems'),
-          where('restaurantId', '==', restaurantId),
-        )
-      : collection(db, 'menuItems');
+): Promise<{
+  duplicateGroups: number;
+  deletedCount: number;
+  deletedPortionsCount: number;
+}> {
+  const isScoped = Boolean(restaurantId && restaurantId !== '__ALL__');
+  const menuQuery = isScoped
+    ? query(
+        collection(db, 'menuItems'),
+        where('restaurantId', '==', restaurantId),
+      )
+    : collection(db, 'menuItems');
+  const portionQuery = isScoped
+    ? query(
+        collection(db, 'itemPortions'),
+        where('restaurantId', '==', restaurantId),
+      )
+    : collection(db, 'itemPortions');
 
-  const snap = await getDocs(q);
+  const [snap, portionSnap] = await Promise.all([
+    getDocs(menuQuery),
+    getDocs(portionQuery),
+  ]);
   const map = new Map<string, DocumentSnapshot[]>();
 
   snap.docs.forEach((d) => {
@@ -1601,6 +1907,7 @@ export async function cleanupDuplicateMenuItemsApi(
   });
 
   const toDelete: DocumentSnapshot[] = [];
+  const deletedMenuItemIds = new Set<string>();
   for (const [, docs] of map.entries()) {
     if (docs.length > 1) {
       docs.sort((a, b) => {
@@ -1616,17 +1923,65 @@ export async function cleanupDuplicateMenuItemsApi(
       });
       for (let i = 1; i < docs.length; i++) {
         toDelete.push(docs[i]);
+        deletedMenuItemIds.add(docs[i].id);
       }
     }
   }
 
-  for (let i = 0; i < toDelete.length; i += 400) {
+  const survivingItems = snap.docs
+    .filter((d) => !deletedMenuItemIds.has(d.id))
+    .map((d) => {
+      const dat = d.data();
+      return {
+        id: d.id,
+        restaurantId: String(dat.restaurantId || ''),
+        itemName: String(dat.itemName || ''),
+        normalizedName: dat.normalizedName
+          ? String(dat.normalizedName)
+          : undefined,
+        legacyItemId: dat.legacyItemId ? String(dat.legacyItemId) : undefined,
+        isActive: dat.isActive !== false,
+      };
+    });
+
+  const portionDocs: StoredPortionRecord[] = portionSnap.docs.map((d) => {
+    const dat = d.data();
+    return {
+      id: d.id,
+      restaurantId: String(dat.restaurantId || ''),
+      menuItemId: dat.menuItemId ? String(dat.menuItemId) : undefined,
+      menuItemName: dat.menuItemName ? String(dat.menuItemName) : undefined,
+      normalizedName: dat.normalizedName
+        ? String(dat.normalizedName)
+        : undefined,
+      legacyItemId: dat.legacyItemId ? String(dat.legacyItemId) : undefined,
+      portionName: dat.portionName ? String(dat.portionName) : undefined,
+      price: Number(dat.price || 0),
+    };
+  });
+
+  const portionCleanup = planDuplicatePortionsCleanup({
+    survivingItems,
+    deletedMenuItemIds,
+    portionDocs,
+  });
+
+  const allRefsToDelete = [
+    ...toDelete.map((d) => d.ref),
+    ...portionCleanup.toDeleteIds.map((pid) => doc(db, 'itemPortions', pid)),
+  ];
+
+  for (let i = 0; i < allRefsToDelete.length; i += 400) {
     const batch = writeBatch(db);
-    toDelete.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+    allRefsToDelete.slice(i, i + 400).forEach((ref) => batch.delete(ref));
     await batch.commit();
   }
 
-  return { duplicateGroups: map.size, deletedCount: toDelete.length };
+  return {
+    duplicateGroups: map.size,
+    deletedCount: toDelete.length,
+    deletedPortionsCount: portionCleanup.toDeleteIds.length,
+  };
 }
 
 // ── Historical Orders Range Cleanup ───────────────────

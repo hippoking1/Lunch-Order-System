@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Search, Plus, Pencil, Trash2, Save, X, Calendar, Store, Layers, FileText, Loader2 } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, Save, X, Calendar, Store, Layers, FileText, Loader2, Wallet } from 'lucide-react';
 import classNames from 'classnames';
 import { useStore } from '../../store';
 import { useToast } from '../../hooks/useToast';
+import { dedupePortions } from '../../utils/normalize';
+import type { Portion } from '../../types';
 import Modal from '../common/Modal';
 
 interface EditingItem {
@@ -13,6 +15,7 @@ interface EditingItem {
   category: string;
   subCategory: string;
   flavors: string;
+  portions: Array<{ id: string; name: string; price: string }>;
 }
 
 export default function MenuItemTable({ initialRestaurantId }: { initialRestaurantId?: string } = {}) {
@@ -25,11 +28,14 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
   const addToast = useToast((s) => s.addToast);
   const newItemDisplayDays = useStore((s) => s.newItemDisplayDays);
   const adminUpdateNewItemDisplayDays = useStore((s) => s.adminUpdateNewItemDisplayDays);
+  const balanceEnabled = useStore((s) => s.balanceEnabled);
+  const adminUpdateBalanceEnabled = useStore((s) => s.adminUpdateBalanceEnabled);
   const adminAddRestaurant = useStore((s) => s.adminAddRestaurant);
   const adminAddExtra = useStore((s) => s.adminAddExtra);
   const adminUpdateExtra = useStore((s) => s.adminUpdateExtra);
   const adminDeleteExtra = useStore((s) => s.adminDeleteExtra);
   const [displayDaysInput, setDisplayDaysInput] = useState(String(newItemDisplayDays));
+  const [togglingBalance, setTogglingBalance] = useState(false);
   const [addingRest, setAddingRest] = useState(false);
   const [newRest, setNewRest] = useState({ name: '', category: '正餐' as string, telephone: '' });
 
@@ -356,6 +362,11 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
 
   const handleSaveEdit = async () => {
     if (!editing) return;
+    const cleanPortions: Portion[] = dedupePortions(
+      editing.portions
+        .filter((p) => p.name.trim() && p.price !== '' && !isNaN(Number(p.price)))
+        .map((p) => ({ name: p.name.trim(), price: Number(p.price) })),
+    );
     const result = await adminUpdateItem({
       restaurantId: editing.restaurantId,
       itemId: editing.itemId,
@@ -364,9 +375,10 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
       category: editing.category,
       subCategory: editing.subCategory,
       flavors: editing.flavors,
+      portions: cleanPortions,
     });
     if (result.ok) {
-      addToast('success', '品項已更新');
+      addToast('success', '品項與份量已更新');
       setEditing(null);
     } else {
       addToast('error', result.error || '更新失敗');
@@ -457,34 +469,66 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
           </button>
         </div>
         <div
-          className="flex gap-2 items-center mt-3"
-          style={{ borderTop: '1px solid var(--glass-border)', paddingTop: 12 }}
+          className="flex gap-4 items-center justify-between flex-wrap mt-3"
+          style={{ borderTop: '1px solid var(--divider)', paddingTop: 12 }}
         >
-          <Calendar size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-          <span style={{ fontSize: 13, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>新品展示天數</span>
-          <input
-            type="number"
-            min="0"
-            max="90"
-            value={displayDaysInput}
-            onChange={(e) => setDisplayDaysInput(e.target.value)}
-            style={{ width: 70 }}
-          />
-          <button
-            className="btn btn-outline btn-sm"
-            onClick={async () => {
-              const days = Number(displayDaysInput);
-              if (isNaN(days) || days < 0) return;
-              const result = await adminUpdateNewItemDisplayDays(days);
-              if (result.ok) {
-                addToast('success', `新品展示天數已更新為 ${days} 天`);
-              } else {
-                addToast('error', result.error || '更新失敗');
-              }
-            }}
-          >
-            <Save size={12} /> 儲存
-          </button>
+          <div className="flex gap-2 items-center">
+            <Calendar size={14} strokeWidth={1.5} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            <span className="caption" style={{ whiteSpace: 'nowrap' }}>新品展示天數</span>
+            <input
+              type="number"
+              min="0"
+              max="90"
+              value={displayDaysInput}
+              onChange={(e) => setDisplayDaysInput(e.target.value)}
+              style={{ width: 70 }}
+            />
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={async () => {
+                const days = Number(displayDaysInput);
+                if (isNaN(days) || days < 0) return;
+                const result = await adminUpdateNewItemDisplayDays(days);
+                if (result.ok) {
+                  addToast('success', `新品展示天數已更新為 ${days} 天`);
+                } else {
+                  addToast('error', result.error || '更新失敗');
+                }
+              }}
+            >
+              <Save size={12} strokeWidth={1.5} /> 儲存
+            </button>
+          </div>
+
+          <div className="flex gap-2 items-center">
+            <Wallet size={14} strokeWidth={1.5} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            <span className="caption" style={{ whiteSpace: 'nowrap' }}>
+              啟用儲值與餘額扣款功能
+            </span>
+            <label className="toggle-switch" title="關閉時前台將隱藏儲值按鈕與餘額扣款開關">
+              <input
+                type="checkbox"
+                checked={balanceEnabled}
+                disabled={togglingBalance}
+                onChange={async (e) => {
+                  const next = e.target.checked;
+                  setTogglingBalance(true);
+                  const res = await adminUpdateBalanceEnabled(next);
+                  setTogglingBalance(false);
+                  if (res.ok) {
+                    addToast('success', next ? '已開啟前台儲值與餘額扣款功能' : '已關閉前台儲值與餘額扣款功能');
+                  } else {
+                    addToast('error', res.error || '更新設定失敗');
+                  }
+                }}
+              />
+              <span className="toggle-track" />
+            </label>
+            <span className={classNames('badge', balanceEnabled ? 'badge-success' : 'badge-muted')}>
+              {balanceEnabled ? '已開啟' : '已關閉'}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -1078,7 +1122,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                       <div className="flex flex-col flex-1" style={{ minWidth: 0 }}>
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-base">{extra.name}</span>
-                          <span className="badge" style={{ fontSize: 11, background: 'rgba(124, 92, 252, 0.2)', color: 'var(--accent)' }}>
+                          <span className="badge badge-primary" style={{ fontSize: 11 }}>
                             {extra.group || '套餐'}
                           </span>
                           <span className="badge badge-default" style={{ fontSize: 11 }}>
@@ -1258,53 +1302,143 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
               >
                 {editing?.itemId === item.id &&
                 editing?.restaurantId === item.restaurantId ? (
-                  /* Editing mode */
-                  <div
-                    className="flex gap-2 items-center flex-1"
-                    style={{ flexWrap: 'wrap' }}
-                  >
-                    <input
-                      value={editing.itemName}
-                      onChange={(e) =>
-                        setEditing({ ...editing, itemName: e.target.value })
-                      }
-                      style={{ flex: 2, minWidth: 120 }}
-                    />
-                    <input
-                      type="number"
-                      value={editing.price}
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          price: Number(e.target.value),
-                        })
-                      }
-                      style={{ width: 80 }}
-                    />
-                    <input
-                      value={editing.subCategory}
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          subCategory: e.target.value,
-                        })
-                      }
-                      placeholder="子分類"
-                      style={{ width: 100 }}
-                    />
-                    <button
-                      className="btn btn-ghost"
-                      onClick={() => setEditing(null)}
+                  /* Editing mode (incl. inline portions editor) */
+                  <div className="flex flex-col gap-3 flex-1">
+                    <div
+                      className="flex gap-2 items-center"
+                      style={{ flexWrap: 'wrap' }}
                     >
-                      <X size={14} />
-                    </button>
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleSaveEdit}
-                      style={{ padding: '8px 16px' }}
-                    >
-                      <Save size={14} />
-                    </button>
+                      <input
+                        value={editing.itemName}
+                        onChange={(e) =>
+                          setEditing({ ...editing, itemName: e.target.value })
+                        }
+                        placeholder="品項名稱"
+                        style={{ flex: 2, minWidth: 140 }}
+                      />
+                      <input
+                        type="number"
+                        value={editing.price}
+                        onChange={(e) =>
+                          setEditing({
+                            ...editing,
+                            price: Number(e.target.value),
+                          })
+                        }
+                        placeholder="基礎價"
+                        style={{ width: 84 }}
+                      />
+                      <input
+                        value={editing.subCategory}
+                        onChange={(e) =>
+                          setEditing({
+                            ...editing,
+                            subCategory: e.target.value,
+                          })
+                        }
+                        placeholder="子分類"
+                        style={{ width: 110 }}
+                      />
+                      <input
+                        value={editing.flavors}
+                        onChange={(e) =>
+                          setEditing({
+                            ...editing,
+                            flavors: e.target.value,
+                          })
+                        }
+                        placeholder="口味 (逗號分隔)"
+                        style={{ width: 130 }}
+                      />
+                    </div>
+
+                    {/* Inline portions editor */}
+                    <div className="card-section flex flex-col gap-2" style={{ padding: 12 }}>
+                      <div className="flex justify-between items-center">
+                        <span className="label">份量規格（可選，空白則為單一價格）</span>
+                        <button
+                          type="button"
+                          className="chip-btn"
+                          onClick={() =>
+                            setEditing({
+                              ...editing,
+                              portions: [
+                                ...editing.portions,
+                                {
+                                  id: Math.random().toString(36).slice(2, 9),
+                                  name: '',
+                                  price: String(editing.price || ''),
+                                },
+                              ],
+                            })
+                          }
+                        >
+                          <Plus size={12} strokeWidth={1.5} />
+                          新增份量
+                        </button>
+                      </div>
+                      {editing.portions.length === 0 ? (
+                        <span className="label">目前無獨立份量（使用基礎價 ${editing.price}）</span>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          {editing.portions.map((pRow, pIdx) => (
+                            <div key={pRow.id} className="flex gap-2 items-center">
+                              <input
+                                value={pRow.name}
+                                placeholder="份量名稱 (例: 杯、瓶、大)"
+                                onChange={(e) => {
+                                  const next = [...editing.portions];
+                                  next[pIdx] = { ...next[pIdx], name: e.target.value };
+                                  setEditing({ ...editing, portions: next });
+                                }}
+                                style={{ flex: 1, maxWidth: 180 }}
+                              />
+                              <input
+                                type="number"
+                                value={pRow.price}
+                                placeholder="價格"
+                                onChange={(e) => {
+                                  const next = [...editing.portions];
+                                  next[pIdx] = { ...next[pIdx], price: e.target.value };
+                                  setEditing({ ...editing, portions: next });
+                                }}
+                                style={{ width: 92 }}
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-icon"
+                                aria-label="刪除此份量"
+                                onClick={() =>
+                                  setEditing({
+                                    ...editing,
+                                    portions: editing.portions.filter((_, i) => i !== pIdx),
+                                  })
+                                }
+                              >
+                                <X size={14} strokeWidth={1.5} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => setEditing(null)}
+                      >
+                        <X size={14} strokeWidth={1.5} /> 取消
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={handleSaveEdit}
+                      >
+                        <Save size={14} strokeWidth={1.5} /> 儲存變更
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   /* Display mode */
@@ -1313,7 +1447,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                       className="flex flex-col flex-1"
                       style={{ minWidth: 0 }}
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold truncate">
                           {item.name}
                           {!!(item.createdAt && (Date.now() - new Date(item.createdAt).getTime()) < newItemDisplayDays * 86400000) && (
@@ -1326,6 +1460,11 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                             style={{ fontSize: 11 }}
                           >
                             {getRestName(item.restaurantId)}
+                          </span>
+                        )}
+                        {item.portions && item.portions.length > 0 && (
+                          <span className="badge badge-default mono" style={{ fontSize: 11 }}>
+                            {item.portions.map((p) => `${p.name} $${p.price}`).join(' · ')}
                           </span>
                         )}
                       </div>
@@ -1382,7 +1521,9 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                     </span>
                     <div className="flex gap-1">
                       <button
+                        type="button"
                         className="btn btn-ghost btn-icon"
+                        aria-label={`編輯 ${item.name}`}
                         onClick={() =>
                           setEditing({
                             restaurantId: item.restaurantId,
@@ -1392,14 +1533,21 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                             category: item.category,
                             subCategory: item.subCategory,
                             flavors: item.flavors,
+                            portions: dedupePortions(item.portions).map((p, i) => ({
+                              id: `${item.id}_${i}_${p.name}`,
+                              name: p.name,
+                              price: String(p.price),
+                            })),
                           })
                         }
-                        title="編輯"
+                        title="編輯品項與份量"
                       >
-                        <Pencil size={14} />
+                        <Pencil size={14} strokeWidth={1.5} />
                       </button>
                       <button
+                        type="button"
                         className="btn btn-ghost btn-icon"
+                        aria-label={`停用 ${item.name}`}
                         onClick={() =>
                           setConfirmDelete({
                             restaurantId: item.restaurantId,
@@ -1410,7 +1558,7 @@ export default function MenuItemTable({ initialRestaurantId }: { initialRestaura
                         title="停用"
                         style={{ color: 'var(--error)' }}
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={14} strokeWidth={1.5} />
                       </button>
                     </div>
                   </>
